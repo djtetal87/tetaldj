@@ -6,7 +6,13 @@
 #include "last_error.hpp"
 
 #include "signalsmith-stretch.h"
+#ifdef __ANDROID__
 #include <oboe/Oboe.h>
+#else
+// TetalDJ: iOS / macOS / Linux output goes through miniaudio (Core Audio
+// on Apple). The implementation lives in audio_backend_miniaudio.cpp.
+#include "miniaudio.h"
+#endif
 
 #include <algorithm>
 #include <atomic>
@@ -34,9 +40,7 @@
 
 #include "chunk_cache.hpp"
 
-#include <android/log.h>
-#define LOGI(...) __android_log_print(ANDROID_LOG_INFO, "sidedeck", __VA_ARGS__)
-#define LOGE(...) __android_log_print(ANDROID_LOG_ERROR, "sidedeck", __VA_ARGS__)
+#include "platform_log.hpp"
 
 namespace {
 
@@ -420,10 +424,17 @@ struct AtomicFlag {
   ~AtomicFlag() { flag.store(false); }
 };
 
+#ifdef __ANDROID__
 struct Engine : public oboe::AudioStreamDataCallback,
                 public oboe::AudioStreamErrorCallback {
   std::mutex streamMutex;
   std::shared_ptr<oboe::AudioStream> stream;
+#else
+struct Engine {
+  std::mutex streamMutex;
+  ma_device device{};
+  bool deviceInit = false;
+#endif
   Deck decks[2];
   std::atomic<float> xfader{0.5f};
   std::atomic<float> master{1.0f};
@@ -506,6 +517,7 @@ struct Engine : public oboe::AudioStreamDataCallback,
     }
   }
 
+#ifdef __ANDROID__
   bool tryOpenStream(int wantCh, oboe::SharingMode share, oboe::PerformanceMode perf,
                      int32_t sampleRate, int32_t deviceId) {
     oboe::AudioStreamBuilder builder;
@@ -585,6 +597,76 @@ struct Engine : public oboe::AudioStreamDataCallback,
       stream.reset();
     }
   }
+
+#else
+  // --- miniaudio backend (iOS / macOS / Linux) ---------------------------
+  // Core Audio on Apple. The engine renders at whatever rate the device
+  // reports, same contract as the Oboe path.
+  static void maCallback(ma_device* dev, void* out, const void* /*in*/, ma_uint32 frames) {
+    auto* self = static_cast<Engine*>(dev->pUserData);
+    if (self == nullptr || out == nullptr) {
+      return;
+    }
+    const int ch = std::max(1, (int)dev->playback.channels);
+    self->engineChannels.store(ch);
+    self->renderInterleaved(static_cast<float*>(out), (int)frames, ch);
+  }
+
+  bool openStream() {
+    AtomicFlag busy(managingStream);
+    std::lock_guard<std::mutex> lock(streamMutex);
+    if (deviceInit) {
+      ma_device_uninit(&device);
+      deviceInit = false;
+    }
+    if (outputMode.load() == 1) {
+      // No USB 4-channel path on this platform yet; fall back to stereo.
+      outputMode.store(0);
+    }
+
+    ma_device_config cfg = ma_device_config_init(ma_device_type_playback);
+    cfg.playback.format = ma_format_f32;
+    cfg.playback.channels = 2;
+    cfg.sampleRate = 48000;
+    cfg.periodSizeInFrames = 256;
+    cfg.dataCallback = &Engine::maCallback;
+    cfg.pUserData = this;
+    cfg.performanceProfile = ma_performance_profile_low_latency;
+
+    if (ma_device_init(nullptr, &cfg, &device) != MA_SUCCESS) {
+      LOGE("openStream failed (miniaudio init)");
+      return false;
+    }
+    deviceInit = true;
+
+    const int newSr = (int)device.sampleRate;
+    const int newCh = (int)device.playback.channels;
+    engineSampleRate.store(newSr > 0 ? newSr : 48000);
+    engineChannels.store(newCh > 0 ? newCh : 2);
+    LOGI("stream open sr=%d ch=%d (miniaudio/%s)", newSr, newCh,
+         ma_get_backend_name(device.pContext->backend));
+
+    applyLoadedDeckSampleRate(engineSampleRate.load());
+
+    if (ma_device_start(&device) != MA_SUCCESS) {
+      LOGE("openStream failed (miniaudio start)");
+      ma_device_uninit(&device);
+      deviceInit = false;
+      return false;
+    }
+    return true;
+  }
+
+  void closeStream() {
+    AtomicFlag busy(managingStream);
+    std::lock_guard<std::mutex> lock(streamMutex);
+    if (deviceInit) {
+      ma_device_uninit(&device);
+      deviceInit = false;
+    }
+  }
+
+#endif
 
   void renderDeck(Deck& d, float* left, float* right, int frames) {
     std::unique_lock<std::mutex> lock(d.mutex, std::try_to_lock);
@@ -792,6 +874,7 @@ struct Engine : public oboe::AudioStreamDataCallback,
     }
   }
 
+#ifdef __ANDROID__
   oboe::DataCallbackResult onAudioReady(oboe::AudioStream* s, void* audioData,
                                         int32_t numFrames) override {
     if (s == nullptr || audioData == nullptr || s->getFormat() != oboe::AudioFormat::Float) {
@@ -819,6 +902,8 @@ struct Engine : public oboe::AudioStreamDataCallback,
     }
   }
 
+
+#endif
 
   // First 60s, mixed to mono and resampled for BPM/key.
   static std::vector<float> decodeAnalyzeMono(const char* path, int targetSr) {

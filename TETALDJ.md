@@ -1,7 +1,7 @@
 # TetalDJ — fork de SideDeck
 
 Base: [manueljpy/SideDeck](https://github.com/manueljpy/SideDeck) (GPL-3.0-or-later).
-Flutter (Dart UI) + motor C++ (Oboe) vía FFI. Solo Android por ahora.
+Flutter (Dart UI) + motor C++ vía FFI. Android (Oboe) e iOS (miniaudio / Core Audio).
 
 ## Cambios respecto a upstream
 
@@ -31,16 +31,61 @@ Comportamiento (tipo Serato / Virtual DJ):
 - Pad vacío → fija el hot cue en el playhead. Pad lleno → salta (y reproduce si
   estaba pausado). Mantener pad → borra.
 
+### v0.2 — port a iOS + .ipa por GitHub Actions (2026-10-20)
+El motor era solo Android (Oboe, logcat, MediaCodec). Ahora compila también
+para iOS / macOS / Linux:
+
+- `native/engine/platform_log.hpp`: LOGI/LOGE → logcat en Android, stderr en
+  el resto (reemplaza `<android/log.h>` en `dj_engine.cpp` y `chunk_cache.hpp`).
+- `native/engine/dj_engine.cpp`: `struct Engine` tiene dos backends de salida
+  bajo `#ifdef __ANDROID__`: Oboe (igual que upstream) o **miniaudio**
+  (`ma_device`, Core Audio en iPhone, 48 kHz / 256 frames, misma
+  `renderInterleaved`). El modo mixer USB 4 canales queda solo en Android.
+- `native/engine/audio_backend_miniaudio.cpp` + `third_party/miniaudio/`
+  (v0.11.25, MIT-0/public domain). En Apple se compila como Objective-C++
+  porque miniaudio usa AVAudioSession.
+- AAC/M4A: upstream ya lo tenía bajo `__ANDROID__` (MediaCodec), así que en
+  iOS por ahora van MP3, WAV, FLAC y Opus. AudioToolbox para AAC: pendiente.
+- `native/CMakeLists.txt` (nuevo): build estático del motor + qm-dsp + opus
+  para iOS/macOS/Linux, y en Apple une todo en `libtetaldj_engine.a`.
+  Probado en Linux: compila, analiza BPM (124.00 en un click de 124) y carga
+  pistas con el backend Null de miniaudio.
+- `ios/` (nuevo, `flutter create`): bundle `cl.tetal.tetaldj`, nombre
+  "TetalDJ", solo horizontal, audio en segundo plano, compartir archivos
+  (`UIFileSharingEnabled`) para soltar MP3 desde Finder / app Archivos.
+- `packages/tetaldj_engine/` (nuevo): plugin FFI de Flutter cuyo podspec
+  vendoriza `libtetaldj_engine.a` con `-force_load`, para que
+  `DynamicLibrary.process()` encuentre los `dj_*`.
+- `lib/state/library_controller.dart`: en iOS la librería es
+  `Documents/Music` y los archivos elegidos con el picker se copian ahí
+  (el picker de iOS entrega copias temporales que el sistema borra).
+- `.github/workflows/ios.yml`: igual que TetalCut — runner macOS, CMake
+  cruzado a arm64, `flutter build ios --no-codesign`, y sube
+  `TetalDJ-<versión>-ios-arm64.ipa` como artifact para Sideloadly.
+
 ## Compilar
 ```
 flutter pub get
 flutter run -d <android-device>      # o: flutter build apk --debug
 ```
-`flutter analyze` y `flutter test` pasan. El C++ se compila con el NDK al hacer
-`flutter run`; no fue compilado en este entorno.
+`flutter analyze` y `flutter test` pasan. El C++ de Android se compila con el
+NDK al hacer `flutter run`; no fue compilado en este entorno.
+
+### iPhone (.ipa sin firmar, para Sideloadly)
+1. Crear el repo `djtetal87/tetaldj` en GitHub y subir este proyecto.
+2. GitHub → Actions → **Build for iPhone** → Run workflow.
+3. Descargar el artifact `TetalDJ-ios-arm64`, descomprimir el .ipa.
+4. Sideloadly: iPhone conectado, arrastrar el .ipa, Apple ID, Start.
+   (Certificado gratis: la app caduca a los 7 días; se vuelve a instalar.)
+5. Para cargar música: Finder → iPhone → Archivos → TetalDJ → soltar los MP3
+   en `Music`, o desde la app con "elegir archivos".
+
+Primera vez que corre el workflow puede fallar en algo de CocoaPods / Xcode
+que no se puede probar fuera de macOS: el log queda en el summary del run.
 
 ## Roadmap propuesto
 1. [x] CUE + hot cues en UI, con persistencia
+1b. [x] Port del motor a iOS (miniaudio) + workflow de .ipa
 2. [ ] Platos / jog wheel táctil (scratch + pitch bend por arrastre) — requiere
        `dj_scratch(deck, velocity)` en el motor (hoy solo hay nudge por rate)
 3. [ ] FX por deck: echo, reverb, flanger, roll — bloque `biquad.hpp` ya
@@ -49,5 +94,4 @@ flutter run -d <android-device>      # o: flutter build apk --debug
 5. [ ] Modo vertical (teléfono en portrait, un deck arriba y otro abajo)
 6. [ ] Rebranding: nombre, package `es.manifold.sidedeck` → `cl.tetal.tetaldj`,
        ícono, colores
-7. [ ] iOS: backend Core Audio / AVAudioEngine (o miniaudio) para reemplazar
-       Oboe; Flutter ya cubre la UI
+7. [ ] iOS: AAC/M4A con AudioToolbox; ícono y launch screen propios

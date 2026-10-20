@@ -10,7 +10,7 @@
 #include "streaming_decoder.hpp"
 
 #include <algorithm>
-#include <android/log.h>
+#include "platform_log.hpp"
 #include <atomic>
 #include <chrono>
 #include <cmath>
@@ -25,7 +25,7 @@
 #include <unordered_map>
 #include <vector>
 
-#define CACHE_LOGI(...) __android_log_print(ANDROID_LOG_INFO, "sidedeck.cache", __VA_ARGS__)
+#define CACHE_LOGI(...) LOGI(__VA_ARGS__)
 
 struct ChunkCache {
   static constexpr int kChunkFrames = 8192;

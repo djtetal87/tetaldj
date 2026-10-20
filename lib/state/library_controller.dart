@@ -3,6 +3,7 @@ import 'dart:io';
 import 'package:file_picker/file_picker.dart';
 import 'package:flutter/foundation.dart';
 import 'package:path/path.dart' as p;
+import 'package:path_provider/path_provider.dart';
 import 'package:permission_handler/permission_handler.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:sidedeck/engine/analysis_cache.dart';
@@ -100,6 +101,13 @@ class LibraryController extends ChangeNotifier {
       final prefs = await SharedPreferences.getInstance();
       folderPath = prefs.getString('library_folder');
       final extra = prefs.getStringList('library_paths') ?? [];
+      if (Platform.isIOS) {
+        // iOS: the app's Documents folder is the library (files dropped in
+        // through the Files app / Finder / iTunes file sharing, and files
+        // picked in-app, which are copied there). The sandbox path changes
+        // between installs, so never trust a stored one.
+        folderPath = await _iosMusicDir();
+      }
       if (folderPath != null && folderPath!.isNotEmpty) {
         await scanDirectory(folderPath!, persist: false);
       }
@@ -111,6 +119,29 @@ class LibraryController extends ChangeNotifier {
     }
     loading = false;
     _emit();
+  }
+
+  /// iOS music folder: `<Documents>/Music`, created on demand.
+  Future<String> _iosMusicDir() async {
+    final docs = await getApplicationDocumentsDirectory();
+    final dir = Directory(p.join(docs.path, 'Music'));
+    if (!await dir.exists()) await dir.create(recursive: true);
+    return dir.path;
+  }
+
+  /// On iOS the picker hands back a copy in a temp folder that the system
+  /// may purge, so keep our own copy in the Documents/Music library.
+  Future<String> _importIfNeeded(String path) async {
+    if (!Platform.isIOS) return path;
+    final musicDir = await _iosMusicDir();
+    if (p.isWithin(musicDir, path)) return path;
+    final dest = p.join(musicDir, p.basename(path));
+    try {
+      await File(path).copy(dest);
+      return dest;
+    } catch (_) {
+      return path;
+    }
   }
 
   Future<void> _persist() async {
@@ -147,7 +178,7 @@ class LibraryController extends ChangeNotifier {
       for (final f in result.files) {
         final path = f.path;
         if (path == null) continue;
-        await _addPath(path);
+        await _addPath(await _importIfNeeded(path));
       }
       await _persist();
     } catch (e) {

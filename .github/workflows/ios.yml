@@ -1,0 +1,95 @@
+name: Build for iPhone
+
+# TetalDJ for the iPhone, same recipe as TetalCut: an unsigned .ipa built on
+# a macOS runner, which Sideloadly signs with the tester's Apple ID on the way
+# onto the phone. Runs by hand (Actions > Build for iPhone > Run workflow).
+#
+# 1. CMake cross-compiles the C++ engine (miniaudio / Core Audio, qm-dsp,
+#    opus) for arm64 iOS into one static library.
+# 2. The library is dropped into the tetaldj_engine FFI pod.
+# 3. flutter build ios --no-codesign produces Runner.app; it is zipped as
+#    Payload/ into the .ipa.
+on:
+  workflow_dispatch:
+  push:
+    tags: ['v*']
+
+jobs:
+  ios:
+    name: TetalDJ iOS arm64
+    runs-on: macos-15
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Read the version
+        id: version
+        run: |
+          version=$(sed -n 's/^version: *\(.*\)/\1/p' pubspec.yaml | head -1 | cut -d+ -f1)
+          echo "version=$version" >> "$GITHUB_OUTPUT"
+          echo "Building TetalDJ $version for iOS arm64"
+
+      - uses: subosito/flutter-action@v2
+        with:
+          channel: stable
+          cache: true
+
+      - name: Native engine for iOS (CMake)
+        run: |
+          set -euo pipefail
+          cmake -S native -B build/native-ios -G "Unix Makefiles" \
+            -DCMAKE_BUILD_TYPE=Release \
+            -DCMAKE_SYSTEM_NAME=iOS \
+            -DCMAKE_OSX_SYSROOT=iphoneos \
+            -DCMAKE_OSX_ARCHITECTURES=arm64 \
+            -DCMAKE_OSX_DEPLOYMENT_TARGET=15.0 \
+            -DOPUS_DISABLE_INTRINSICS=ON \
+            -DOPUS_STACK_PROTECTOR=OFF
+          cmake --build build/native-ios --parallel
+          ls -l build/native-ios/libtetaldj_engine.a
+          lipo -info build/native-ios/libtetaldj_engine.a
+          cp build/native-ios/libtetaldj_engine.a packages/tetaldj_engine/ios/
+
+      - name: Flutter build (unsigned)
+        run: |
+          set -o pipefail
+          flutter --version
+          flutter pub get
+          flutter build ios --release --no-codesign 2>&1 | tee build.log
+
+      - name: Build log to the summary (failure only)
+        if: failure()
+        run: |
+          {
+            echo "### Build failed: iOS arm64"
+            echo '```'
+            tail -n 150 build.log 2>/dev/null || true
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Check the engine made it into the app
+        run: |
+          app=build/ios/iphoneos/Runner.app
+          fw=$app/Frameworks/tetaldj_engine.framework/tetaldj_engine
+          if [ -f "$fw" ]; then
+            nm -gU "$fw" | grep -c " _dj_" | xargs -I{} echo "{} dj_* symbols exported from the pod framework"
+          else
+            echo "::warning::tetaldj_engine framework not found at $fw; the engine may be linked statically into Runner"
+            nm -gU "$app/Runner" | grep -c " _dj_" | xargs -I{} echo "{} dj_* symbols in Runner"
+          fi
+
+      - name: Stage the .ipa
+        env:
+          VERSION: ${{ steps.version.outputs.version }}
+        run: |
+          set -euo pipefail
+          mkdir -p stage payload/Payload
+          cp -R build/ios/iphoneos/Runner.app payload/Payload/
+          (cd payload && ditto -c -k --keepParent Payload "../stage/TetalDJ-$VERSION-ios-arm64.ipa")
+          ls -l stage
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: TetalDJ-ios-arm64
+          path: stage/*
+          if-no-files-found: error

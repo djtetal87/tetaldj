@@ -1,0 +1,18 @@
+name: tetaldj_engine
+description: Native DJ engine (C++ / miniaudio) for TetalDJ on iOS, linked as an FFI plugin.
+version: 0.1.0
+publish_to: none
+
+environment:
+  sdk: ^3.5.0
+  flutter: '>=3.22.0'
+
+dependencies:
+  flutter:
+    sdk: flutter
+
+flutter:
+  plugin:
+    platforms:
+      ios:
+        ffiPlugin: true
