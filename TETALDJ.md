@@ -95,3 +95,23 @@ que no se puede probar fuera de macOS: el log queda en el summary del run.
 6. [ ] Rebranding: nombre, package `es.manifold.sidedeck` → `cl.tetal.tetaldj`,
        ícono, colores
 7. [ ] iOS: AAC/M4A con AudioToolbox; ícono y launch screen propios
+
+### v0.3 — UI handheld estilo Serato, grabación y efectos (2026-10-20)
+- Ícono con el logo "Cesar Augusto"; applicationId `cl.tetal.tetaldj`.
+- Pantalla nueva (`lib/ui/home_page.dart`, `lib/ui/platter.dart`): barra
+  superior con cargar / título / mini-onda / key, platos táctiles en modo
+  vinilo (tocar detiene, arrastrar mueve, soltar sigue), fader VOL/BPM
+  (±16 %) con botón KEY lock, ondas A y B apiladas al centro, transporte
+  (mixer, PLAY, CUE, SYNC, LOOP), crossfader y pads de 4 con dos páginas y
+  modos HOT CUES / AUTO LOOP / BEAT JUMP / FX.
+- Onda a 3 colores: `scanWaveform` calcula energía <200 Hz / 200 Hz-2 kHz /
+  >2 kHz por bin (`dj_waveform_bands_copy`); rojo graves, verde medios,
+  azul agudos. Hot cues de 4 a 8; loops desde 1/4 de beat.
+- Grabación (`native/engine/mix_recorder.hpp`): bus master a WAV 16-bit
+  en `Documents/Grabaciones`, ring buffer + hilo escritor; botón REC.
+- Efectos (`native/engine/deck_fx.hpp`): insert por deck después de
+  EQ/filtro — echo sincronizado, reverb (Freeverb), flanger, phaser,
+  crusher y gate; `dj_set_fx(deck, type, amount, beats)`. En la UI, pad
+  mode FX enciende/apaga; mantener un pad abre intensidad y tiempo.
+- `test/screenshot_test.dart` renderiza la pantalla a PNG con el motor
+  precargado (`LD_PRELOAD`), para revisar el layout sin teléfono.

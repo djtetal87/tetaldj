@@ -75,6 +75,11 @@ int dj_load_with_analysis(DjEngine engine, int deck, const char* path, float bpm
 /** Null-terminated reason for the last failed dj_load / open, or "". */
 const char* dj_last_error(void);
 
+/// Insert effect per deck: type 0 none, 1 echo, 2 reverb, 3 flanger, 4 phaser,
+/// 5 crush, 6 gate; amount 0..1 (wet / intensity); beats = length for the
+/// tempo-synced ones (echo time, LFO period, gate period).
+void dj_set_fx(DjEngine engine, int deck, int type, float amount, float beats);
+
 /// Record the stereo master mix to a 16-bit WAV at [path]. Returns 1 on success.
 int dj_record_start(DjEngine engine, const char* path);
 void dj_record_stop(DjEngine engine);

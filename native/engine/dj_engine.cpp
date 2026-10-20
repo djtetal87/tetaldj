@@ -40,6 +40,7 @@
 
 #include "chunk_cache.hpp"
 #include "mix_recorder.hpp"
+#include "deck_fx.hpp"
 
 #include "platform_log.hpp"
 
@@ -100,6 +101,7 @@ struct Deck {
   float fader = 1.0f;
   float rate = 1.0f;
   bool keylock = true;
+  DeckFx fx;
   float filter = 0.0f; // -1 HPF .. 0 flat .. +1 LPF
   float eqLow = 0, eqMid = 0, eqHigh = 0;
   float eqLowG = 1, eqMidG = 1, eqHighG = 1;
@@ -744,6 +746,8 @@ struct Engine {
       left[i] *= d.gate;
       right[i] *= d.gate;
     }
+    d.fx.prepare(d.sampleRate > 0 ? d.sampleRate : engineSampleRate.load());
+    d.fx.process(left, right, frames, (double)d.bpm * (double)d.rate);
   }
 
   void renderPlay(Deck& d, float* left, float* right, int frames, bool allowLoopWrap) {
@@ -1084,6 +1088,7 @@ int dj_load_with_analysis(DjEngine engine, int deck, const char* path, float bpm
   std::lock_guard<std::mutex> lock(d.mutex);
   d.path = path;
   d.sampleRate = sr;
+  d.fx.prepare(sr);
   d.channels = 2;
   d.totalFrames = d.cache.engineFrames();
   d.playhead = 0;
@@ -1515,6 +1520,14 @@ void dj_record_stop(DjEngine engine) { asEngine(engine)->recorder.stop(); }
 int dj_recording(DjEngine engine) { return asEngine(engine)->recorder.recording() ? 1 : 0; }
 
 double dj_record_seconds(DjEngine engine) { return asEngine(engine)->recorder.seconds(); }
+
+void dj_set_fx(DjEngine engine, int deck, int type, float amount, float beats) {
+  if (deck < 0 || deck > 1) return;
+  Deck& d = asEngine(engine)->decks[deck];
+  d.fx.type.store(type);
+  d.fx.amount.store(std::max(0.0f, std::min(1.0f, amount)));
+  d.fx.beats.store(std::max(0.0625f, std::min(8.0f, beats)));
+}
 
 } // extern "C"
 

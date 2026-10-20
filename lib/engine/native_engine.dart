@@ -40,6 +40,7 @@ typedef _GetHotcueC = Double Function(Pointer<Void>, Int32, Int32);
 typedef _WaveBinsC = Int32 Function();
 typedef _RecordStartC = Int32 Function(Pointer<Void>, Pointer<Utf8>);
 typedef _RecordSecondsC = Double Function(Pointer<Void>);
+typedef _SetFxC = Void Function(Pointer<Void>, Int32, Int32, Float, Float);
 typedef _WaveCopyC = Int32 Function(
   Pointer<Void>,
   Int32,
@@ -199,6 +200,10 @@ class NativeEngine {
       .lookupFunction<_RecordSecondsC, double Function(Pointer<Void>)>(
         'dj_record_seconds',
       );
+  late final _setFx = _lib
+      .lookupFunction<_SetFxC, void Function(Pointer<Void>, int, int, double, double)>(
+        'dj_set_fx',
+      );
   late final _waveBins = _lib.lookupFunction<_WaveBinsC, int Function()>(
     'dj_waveform_bins',
   );
@@ -288,6 +293,11 @@ class NativeEngine {
   }
 
   void recordStop() => _recordStop(_handle);
+
+  /// Insert effect: type 0 none, 1 echo, 2 reverb, 3 flanger, 4 phaser,
+  /// 5 crush, 6 gate; amount 0..1; beats for the tempo-synced ones.
+  void setFx(int deck, int type, double amount, double beats) =>
+      _setFx(_handle, deck, type, amount, beats);
   bool get recording => _recording(_handle) != 0;
   double get recordSeconds => _recordSeconds(_handle);
 

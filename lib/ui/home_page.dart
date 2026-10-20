@@ -764,6 +764,7 @@ class _HomePageState extends State<HomePage> {
     PadMode.hotcue: 'HOT\nCUES',
     PadMode.loop: 'AUTO\nLOOP',
     PadMode.jump: 'BEAT\nJUMP',
+    PadMode.fx: 'FX',
   };
 
   Widget _padModeButton(int i) {
@@ -871,6 +872,22 @@ class _HomePageState extends State<HomePage> {
           label: b < 0 ? '◀ ${-b}' : '$b ▶',
           onTap: () => _dj.beatJump(i, b),
         );
+      case PadMode.fx:
+        final types = FxType.values.skip(1).toList();
+        if (slot >= types.length) {
+          return const SizedBox.shrink();
+        }
+        final t = types[slot];
+        final on = d.fx == t;
+        return _pad(
+          color: SideDeckTheme.fx,
+          filled: on,
+          enabled: d.loaded,
+          label: t.label,
+          small: true,
+          onTap: () => _dj.setFx(i, type: on ? FxType.none : t),
+          onLongPress: () => _openFxSheet(i),
+        );
     }
   }
 
@@ -879,6 +896,7 @@ class _HomePageState extends State<HomePage> {
     required bool filled,
     required bool enabled,
     required String label,
+    bool small = false,
     VoidCallback? onTap,
     VoidCallback? onLongPress,
   }) {
@@ -905,11 +923,117 @@ class _HomePageState extends State<HomePage> {
         child: Text(
           label,
           style: TextStyle(
-            fontSize: 13,
+            fontSize: small ? 9 : 13,
             fontWeight: FontWeight.w900,
+            letterSpacing: small ? 0.4 : 0,
             color: filled ? Colors.black : SideDeckTheme.text,
           ),
         ),
+      ),
+    );
+  }
+
+  // --------------------------------------------------------------------- fx
+
+  static const _fxBeats = [0.25, 0.5, 1.0, 2.0, 4.0];
+
+  Future<void> _openFxSheet(int i) async {
+    await showModalBottomSheet<void>(
+      context: context,
+      backgroundColor: SideDeckTheme.panel,
+      builder: (ctx) => AnimatedBuilder(
+        animation: _dj,
+        builder: (ctx, _) {
+          final d = _dj.deck(i);
+          final accent = SideDeckTheme.accent(i);
+          return Padding(
+            padding: const EdgeInsets.fromLTRB(20, 14, 20, 16),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Row(
+                  children: [
+                    Text(
+                      'FX DECK ${i == 0 ? 'A' : 'B'}',
+                      style: TextStyle(
+                        fontSize: 12,
+                        fontWeight: FontWeight.w900,
+                        letterSpacing: 1.2,
+                        color: accent,
+                      ),
+                    ),
+                    const Spacer(),
+                    Wrap(
+                      spacing: 6,
+                      children: [
+                        for (final t in FxType.values)
+                          ChoiceChip(
+                            label: Text(t.label, style: const TextStyle(fontSize: 11)),
+                            selected: d.fx == t,
+                            selectedColor: SideDeckTheme.fx,
+                            onSelected: (_) => _dj.setFx(i, type: t),
+                          ),
+                      ],
+                    ),
+                  ],
+                ),
+                const SizedBox(height: 10),
+                Row(
+                  children: [
+                    const SizedBox(
+                      width: 70,
+                      child: Text('INTENSIDAD', style: TextStyle(fontSize: 10, color: SideDeckTheme.muted)),
+                    ),
+                    Expanded(
+                      child: SliderTheme(
+                        data: SliderThemeData(
+                          activeTrackColor: SideDeckTheme.fx,
+                          thumbColor: Colors.white,
+                          inactiveTrackColor: SideDeckTheme.panelAlt,
+                          overlayShape: SliderComponentShape.noOverlay,
+                        ),
+                        child: Slider(
+                          value: d.fxAmount,
+                          onChanged: (v) => _dj.setFx(i, amount: v),
+                        ),
+                      ),
+                    ),
+                    SizedBox(
+                      width: 40,
+                      child: Text(
+                        '${(d.fxAmount * 100).round()}%',
+                        textAlign: TextAlign.right,
+                        style: const TextStyle(fontSize: 12, fontWeight: FontWeight.w700),
+                      ),
+                    ),
+                  ],
+                ),
+                Row(
+                  children: [
+                    const SizedBox(
+                      width: 70,
+                      child: Text('TIEMPO', style: TextStyle(fontSize: 10, color: SideDeckTheme.muted)),
+                    ),
+                    for (final b in _fxBeats) ...[
+                      ChoiceChip(
+                        label: Text(
+                          b < 1 ? '1/${(1 / b).round()}' : '${b.round()}',
+                          style: const TextStyle(fontSize: 11),
+                        ),
+                        selected: (d.fxBeats - b).abs() < 0.01,
+                        selectedColor: SideDeckTheme.fx,
+                        onSelected: (_) => _dj.setFx(i, beats: b),
+                      ),
+                      const SizedBox(width: 6),
+                    ],
+                    const Text('beats', style: TextStyle(fontSize: 10, color: SideDeckTheme.muted)),
+                  ],
+                ),
+              ],
+            ),
+          );
+        },
       ),
     );
   }
@@ -1018,7 +1142,7 @@ class _HomePageState extends State<HomePage> {
   }
 }
 
-enum PadMode { hotcue, loop, jump }
+enum PadMode { hotcue, loop, jump, fx }
 
 class _XfaderThumb extends SliderComponentShape {
   const _XfaderThumb();

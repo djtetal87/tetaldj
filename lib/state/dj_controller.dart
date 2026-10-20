@@ -11,6 +11,19 @@ import 'package:sidedeck/engine/native_engine.dart';
 import 'package:sidedeck/engine/track_analyzer.dart';
 import 'package:sidedeck/engine/usb_output.dart';
 
+enum FxType {
+  none('OFF'),
+  echo('ECHO'),
+  reverb('REVERB'),
+  flanger('FLANGER'),
+  phaser('PHASER'),
+  crush('CRUSH'),
+  gate('GATE');
+
+  const FxType(this.label);
+  final String label;
+}
+
 class DeckState {
   String? path;
   String title = 'Empty';
@@ -28,6 +41,11 @@ class DeckState {
   double rate = 1;
   bool synced = false;
   bool keylock = true;
+
+  /// Insert effect (see [FxType]); amount 0..1, beats for synced effects.
+  FxType fx = FxType.none;
+  double fxAmount = 0.5;
+  double fxBeats = 0.5;
   double beatOffset = 0;
   double gain = 1;
   double fader = 1;
@@ -481,6 +499,15 @@ class DjController extends ChangeNotifier {
     recordingPath = null;
     notifyListeners();
     return path;
+  }
+
+  void setFx(int deckIndex, {FxType? type, double? amount, double? beats}) {
+    final d = deck(deckIndex);
+    if (type != null) d.fx = type;
+    if (amount != null) d.fxAmount = amount.clamp(0.0, 1.0);
+    if (beats != null) d.fxBeats = beats.clamp(0.0625, 8.0);
+    _engine.setFx(deckIndex, d.fx.index, d.fxAmount, d.fxBeats);
+    notifyListeners();
   }
 
   void setKeylock(int deckIndex, bool enabled) {
