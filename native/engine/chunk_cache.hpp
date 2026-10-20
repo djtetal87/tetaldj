@@ -22,6 +22,9 @@
 #include <sys/resource.h>
 #include <thread>
 #include <unistd.h>
+#ifdef __APPLE__
+#include <pthread/qos.h>
+#endif
 #include <unordered_map>
 #include <vector>
 
@@ -438,7 +441,15 @@ struct ChunkCache {
   void workerMain() {
     // Best effort: if the platform refuses the priority bump, decoding still
     // works, it just has less headroom against a busy UI thread.
+#ifdef __ANDROID__
     setpriority(PRIO_PROCESS, (id_t)gettid(), kWorkerNice);
+#elif defined(__APPLE__)
+    // Darwin has no per-thread nice; a lower QoS keeps the decoder out of
+    // the audio thread's way.
+    pthread_set_qos_class_self_np(QOS_CLASS_UTILITY, 0);
+#else
+    (void)kWorkerNice;
+#endif
     StreamingDecoder dec;
     std::string path;
     {
