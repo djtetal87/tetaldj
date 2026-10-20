@@ -39,6 +39,7 @@
 #include <opusfile.h>
 
 #include "chunk_cache.hpp"
+#include "mix_recorder.hpp"
 
 #include "platform_log.hpp"
 
@@ -448,12 +449,15 @@ struct Engine {
   std::atomic<bool> reconnecting{false};
   std::atomic<bool> managingStream{false};
   std::vector<float> mixAL, mixAR, mixBL, mixBR;
+  MixRecorder recorder;
+  std::vector<float> recBuf;
 
   Engine() {
     mixAL.assign(kMaxCallbackFrames, 0.0f);
     mixAR.assign(kMaxCallbackFrames, 0.0f);
     mixBL.assign(kMaxCallbackFrames, 0.0f);
     mixBR.assign(kMaxCallbackFrames, 0.0f);
+    recBuf.assign((size_t)kMaxCallbackFrames * 2, 0.0f);
     for (auto& d : decks) {
       d.stretchInL.assign((size_t)kMaxStretchInFrames, 0.0f);
       d.stretchInR.assign((size_t)kMaxStretchInFrames, 0.0f);
@@ -871,6 +875,16 @@ struct Engine {
           out[i * channels + c] = 0.0f;
         }
       }
+    }
+    if (recorder.recording()) {
+      // Record what the room hears (the stereo mix), in either output mode.
+      for (int i = 0; i < n; ++i) {
+        const float l = (mixAL[i] * gainA + mixBL[i] * gainB) * m;
+        const float r = (mixAR[i] * gainA + mixBR[i] * gainB) * m;
+        recBuf[(size_t)i * 2] = l;
+        recBuf[(size_t)i * 2 + 1] = r;
+      }
+      recorder.push(recBuf.data(), n);
     }
     if (frames > n) {
       std::fill(out + n * channels, out + frames * channels, 0.0f);
@@ -1489,6 +1503,18 @@ int dj_waveform_bands_copy(DjEngine engine, int deck, float* low_out, float* mid
   std::memcpy(high_out, d.bandHigh.data(), sizeof(float) * n);
   return n;
 }
+
+int dj_record_start(DjEngine engine, const char* path) {
+  if (!path) return 0;
+  Engine* e = asEngine(engine);
+  return e->recorder.start(path, e->engineSampleRate.load()) ? 1 : 0;
+}
+
+void dj_record_stop(DjEngine engine) { asEngine(engine)->recorder.stop(); }
+
+int dj_recording(DjEngine engine) { return asEngine(engine)->recorder.recording() ? 1 : 0; }
+
+double dj_record_seconds(DjEngine engine) { return asEngine(engine)->recorder.seconds(); }
 
 } // extern "C"
 

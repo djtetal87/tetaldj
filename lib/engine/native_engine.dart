@@ -38,6 +38,8 @@ typedef _DeckVoidC = Void Function(Pointer<Void>, Int32);
 typedef _SetHotcueC = Void Function(Pointer<Void>, Int32, Int32, Double);
 typedef _GetHotcueC = Double Function(Pointer<Void>, Int32, Int32);
 typedef _WaveBinsC = Int32 Function();
+typedef _RecordStartC = Int32 Function(Pointer<Void>, Pointer<Utf8>);
+typedef _RecordSecondsC = Double Function(Pointer<Void>);
 typedef _WaveCopyC = Int32 Function(
   Pointer<Void>,
   Int32,
@@ -185,6 +187,18 @@ class NativeEngine {
       .lookupFunction<_BeatJumpC, void Function(Pointer<Void>, int, int)>(
         'dj_set_keylock',
       );
+  late final _recordStart = _lib
+      .lookupFunction<_RecordStartC, int Function(Pointer<Void>, Pointer<Utf8>)>(
+        'dj_record_start',
+      );
+  late final _recordStop = _lib
+      .lookupFunction<_StopC, void Function(Pointer<Void>)>('dj_record_stop');
+  late final _recording = _lib
+      .lookupFunction<_GetIntC, int Function(Pointer<Void>)>('dj_recording');
+  late final _recordSeconds = _lib
+      .lookupFunction<_RecordSecondsC, double Function(Pointer<Void>)>(
+        'dj_record_seconds',
+      );
   late final _waveBins = _lib.lookupFunction<_WaveBinsC, int Function()>(
     'dj_waveform_bins',
   );
@@ -262,6 +276,20 @@ class NativeEngine {
       malloc.free(p);
     }
   }
+
+  /// Start writing the master mix to a WAV file. False if it can't open.
+  bool recordStart(String path) {
+    final p = path.toNativeUtf8();
+    try {
+      return _recordStart(_handle, p) != 0;
+    } finally {
+      malloc.free(p);
+    }
+  }
+
+  void recordStop() => _recordStop(_handle);
+  bool get recording => _recording(_handle) != 0;
+  double get recordSeconds => _recordSeconds(_handle);
 
   /// Reason for the last failed [load], or empty if none / success.
   String lastError() {

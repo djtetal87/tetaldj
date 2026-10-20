@@ -75,6 +75,12 @@ int dj_load_with_analysis(DjEngine engine, int deck, const char* path, float bpm
 /** Null-terminated reason for the last failed dj_load / open, or "". */
 const char* dj_last_error(void);
 
+/// Record the stereo master mix to a 16-bit WAV at [path]. Returns 1 on success.
+int dj_record_start(DjEngine engine, const char* path);
+void dj_record_stop(DjEngine engine);
+int dj_recording(DjEngine engine);
+double dj_record_seconds(DjEngine engine);
+
 #ifdef __cplusplus
 }
 #endif

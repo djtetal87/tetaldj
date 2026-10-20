@@ -192,6 +192,8 @@ class _HomePageState extends State<HomePage> {
   }
 
   Widget _wordmark() {
+    final rec = _dj.recordingPath != null;
+    final secs = _dj.recordingSeconds;
     return Column(
       mainAxisAlignment: MainAxisAlignment.center,
       children: [
@@ -202,26 +204,92 @@ class _HomePageState extends State<HomePage> {
           child: const Text(
             'TetalDJ',
             style: TextStyle(
-              fontSize: 20,
+              fontSize: 18,
               fontWeight: FontWeight.w900,
               letterSpacing: -0.5,
+              height: 1,
               color: Colors.white,
             ),
           ),
         ),
-        Material(
-          color: SideDeckTheme.panelAlt,
-          borderRadius: BorderRadius.circular(10),
-          child: InkWell(
-            onTap: _openSettings,
-            borderRadius: BorderRadius.circular(10),
-            child: const Padding(
-              padding: EdgeInsets.symmetric(horizontal: 8, vertical: 2),
-              child: Icon(Icons.settings, size: 14, color: SideDeckTheme.muted),
+        const SizedBox(height: 4),
+        Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            GestureDetector(
+              onTap: _toggleRecording,
+              child: Container(
+                height: 22,
+                padding: const EdgeInsets.symmetric(horizontal: 8),
+                decoration: BoxDecoration(
+                  color: rec ? SideDeckTheme.danger : SideDeckTheme.panelAlt,
+                  borderRadius: BorderRadius.circular(11),
+                  border: Border.all(
+                    color: rec ? SideDeckTheme.danger : SideDeckTheme.stroke,
+                  ),
+                ),
+                child: Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Container(
+                      width: 8,
+                      height: 8,
+                      decoration: BoxDecoration(
+                        shape: BoxShape.circle,
+                        color: rec ? Colors.white : SideDeckTheme.danger,
+                      ),
+                    ),
+                    const SizedBox(width: 5),
+                    Text(
+                      rec ? formatDuration(secs) : 'REC',
+                      style: TextStyle(
+                        fontSize: 10,
+                        fontWeight: FontWeight.w900,
+                        letterSpacing: 0.6,
+                        fontFeatures: const [FontFeature.tabularFigures()],
+                        color: rec ? Colors.white : SideDeckTheme.text,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
             ),
-          ),
+            const SizedBox(width: 6),
+            Material(
+              color: SideDeckTheme.panelAlt,
+              borderRadius: BorderRadius.circular(11),
+              child: InkWell(
+                onTap: _openSettings,
+                borderRadius: BorderRadius.circular(11),
+                child: const SizedBox(
+                  width: 28,
+                  height: 22,
+                  child: Icon(Icons.settings, size: 14, color: SideDeckTheme.muted),
+                ),
+              ),
+            ),
+          ],
         ),
       ],
+    );
+  }
+
+  Future<void> _toggleRecording() async {
+    HapticFeedback.mediumImpact();
+    if (_dj.recordingPath == null) {
+      await _dj.startRecording();
+      return;
+    }
+    final path = _dj.stopRecording();
+    if (!mounted || path == null) return;
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        backgroundColor: SideDeckTheme.panelAlt,
+        content: Text(
+          'Mix guardado en Grabaciones/${path.split('/').last}',
+          style: const TextStyle(color: SideDeckTheme.text),
+        ),
+      ),
     );
   }
 

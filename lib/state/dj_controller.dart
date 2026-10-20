@@ -3,6 +3,8 @@ import 'dart:io';
 import 'dart:math' as math;
 
 import 'package:flutter/foundation.dart';
+import 'package:path/path.dart' as p;
+import 'package:path_provider/path_provider.dart';
 import 'package:sidedeck/engine/analysis_cache.dart';
 import 'package:sidedeck/engine/hotcue_store.dart';
 import 'package:sidedeck/engine/native_engine.dart';
@@ -74,6 +76,10 @@ class DjController extends ChangeNotifier {
   int usbDeviceId = 0;
   UsbMixerOffer? mixerOffer;
   String? engineError;
+
+  /// Mix recording: file being written and elapsed seconds (null = idle).
+  String? recordingPath;
+  double recordingSeconds = 0;
   int? loadingDeck;
   String? loadingTitle;
   String? loadingPath;
@@ -136,6 +142,7 @@ class DjController extends ChangeNotifier {
   }
 
   void _tick() {
+    if (recordingPath != null) recordingSeconds = _engine.recordSeconds;
     var dirty = false;
     for (var i = 0; i < 2; i++) {
       final d = deck(i);
@@ -439,6 +446,43 @@ class DjController extends ChangeNotifier {
     notifyListeners();
   }
 
+  /// Start recording the mix into `<Documents>/Grabaciones/`.
+  Future<String?> startRecording() async {
+    if (recordingPath != null) return recordingPath;
+    try {
+      final docs = await getApplicationDocumentsDirectory();
+      final dir = Directory(p.join(docs.path, 'Grabaciones'));
+      if (!await dir.exists()) await dir.create(recursive: true);
+      final now = DateTime.now();
+      String two(int v) => v.toString().padLeft(2, '0');
+      final name =
+          'TetalDJ ${now.year}-${two(now.month)}-${two(now.day)} ${two(now.hour)}.${two(now.minute)}.wav';
+      final path = p.join(dir.path, name);
+      if (!_engine.recordStart(path)) {
+        engineError = 'No se pudo crear la grabación.';
+        notifyListeners();
+        return null;
+      }
+      recordingPath = path;
+      recordingSeconds = 0;
+      notifyListeners();
+      return path;
+    } catch (e) {
+      engineError = 'No se pudo grabar: $e';
+      notifyListeners();
+      return null;
+    }
+  }
+
+  String? stopRecording() {
+    if (recordingPath == null) return null;
+    _engine.recordStop();
+    final path = recordingPath;
+    recordingPath = null;
+    notifyListeners();
+    return path;
+  }
+
   void setKeylock(int deckIndex, bool enabled) {
     final d = deck(deckIndex);
     d.keylock = enabled;
@@ -705,6 +749,7 @@ class DjController extends ChangeNotifier {
 
   @override
   void dispose() {
+    if (recordingPath != null) _engine.recordStop();
     _usbSub?.cancel();
     _ticker.cancel();
     _nudgeHold[0]?.cancel();
