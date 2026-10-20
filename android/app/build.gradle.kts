@@ -30,7 +30,7 @@ android {
     }
 
     defaultConfig {
-        applicationId = "es.manifold.sidedeck"
+        applicationId = "cl.tetal.tetaldj"
         minSdk = 26
         targetSdk = flutter.targetSdkVersion
         versionCode = flutter.versionCode
