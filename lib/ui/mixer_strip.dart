@@ -29,15 +29,11 @@ class MixerStrip extends StatelessWidget {
     final b = controller.deckB;
     return Row(
       children: [
-        Expanded(flex: 5, child: _eqBlock(0, a, SideDeckTheme.accentA)),
-        const SizedBox(width: 4),
+        SizedBox(width: 104, child: _eqBlock(0, a, SideDeckTheme.accentA)),
         _channelFader(0, a, SideDeckTheme.accentA),
-        const SizedBox(width: 4),
-        Expanded(flex: 4, child: _center()),
-        const SizedBox(width: 4),
+        Expanded(child: _center()),
         _channelFader(1, b, SideDeckTheme.accentB),
-        const SizedBox(width: 4),
-        Expanded(flex: 5, child: _eqBlock(1, b, SideDeckTheme.accentB)),
+        SizedBox(width: 104, child: _eqBlock(1, b, SideDeckTheme.accentB)),
       ],
     );
   }
@@ -49,7 +45,7 @@ class MixerStrip extends StatelessWidget {
           mainAxisAlignment: MainAxisAlignment.center,
           children: [
             _iconBtn(Icons.library_music_outlined, 'Library', onLibrary),
-            const SizedBox(width: 10),
+            const SizedBox(width: 6),
             _iconBtn(Icons.settings_outlined, 'Settings', onSettings),
           ],
         ),
@@ -126,7 +122,7 @@ class MixerStrip extends StatelessWidget {
         onTap: onTap,
         borderRadius: BorderRadius.circular(6),
         child: Container(
-          width: 40,
+          width: 36,
           height: 28,
           alignment: Alignment.center,
           decoration: BoxDecoration(
@@ -141,7 +137,7 @@ class MixerStrip extends StatelessWidget {
 
   Widget _channelFader(int deck, DeckState d, Color accent) {
     return SizedBox(
-      width: 30,
+      width: 26,
       child: Column(
         children: [
           Expanded(

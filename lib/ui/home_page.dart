@@ -12,7 +12,11 @@ import 'package:sidedeck/ui/settings_page.dart';
 import 'package:sidedeck/ui/waveform.dart';
 
 class HomePage extends StatefulWidget {
-  const HomePage({super.key});
+  const HomePage({super.key, this.dj, this.library});
+
+  /// Injected controllers (tests / previews); normally created here.
+  final DjController? dj;
+  final LibraryController? library;
 
   @override
   State<HomePage> createState() => _HomePageState();
@@ -34,8 +38,8 @@ class _HomePageState extends State<HomePage> {
       DeviceOrientation.landscapeRight,
     ]);
     SystemChrome.setEnabledSystemUIMode(SystemUiMode.immersiveSticky);
-    _dj = DjController();
-    _library = LibraryController();
+    _dj = widget.dj ?? DjController();
+    _library = widget.library ?? LibraryController();
     _dj.addListener(_onDjChanged);
   }
 

@@ -22,10 +22,11 @@ class DeckPads extends StatelessWidget {
   final PadMode mode;
   final ValueChanged<PadMode> onMode;
 
-  static const padW = 42.0;
+  static const padW = 38.0;
   static const padH = 44.0;
   static const gap = 5.0;
-  static const width = 60.0 + gap + padW * 4 + gap * 3;
+  static const transportW = 52.0;
+  static const width = transportW + gap + padW * 4 + gap * 3;
 
   @override
   Widget build(BuildContext context) {
@@ -51,7 +52,7 @@ class DeckPads extends StatelessWidget {
     final on = d.loaded;
     final other = dj.deck(1 - deck).loaded;
     return SizedBox(
-      width: 60,
+      width: transportW,
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [

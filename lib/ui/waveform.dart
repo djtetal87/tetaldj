@@ -165,16 +165,19 @@ class WaveformPainter extends CustomPainter {
           final fMid = (b.$2 / total).clamp(0.0, 1.0);
           final fHigh = (b.$3 / total).clamp(0.0, 1.0);
           void bar(double frac, Color c) {
-            final hh = (half * frac.clamp(0.08, 1.0));
+            final hh = (half * frac.clamp(0.0, 1.0));
+            if (hh < 0.5) return;
             canvas.drawRect(
               Rect.fromLTWH(px, yMid - hh, 1.05, hh * 2),
               Paint()..color = c,
             );
           }
           final mix = _pixelColor(t0, t1, amp);
-          bar(1.0, Color.lerp(bandLow, mix, 0.35)!.withValues(alpha: 0.55 + 0.45 * fLow));
-          bar(0.66 + 0.34 * fMid, Color.lerp(bandMid, mix, 0.25)!.withValues(alpha: 0.5 + 0.5 * fMid));
-          bar(0.33 + 0.4 * fHigh, Color.lerp(bandHigh, Colors.white, 0.25 * fHigh)!.withValues(alpha: 0.6 + 0.4 * fHigh));
+          // Nested bars: bass fills the full height, mids + highs the next
+          // layer, highs the core, so the colour reads which bands are there.
+          bar(1.0, Color.lerp(bandLow, mix, 0.3)!.withValues(alpha: 0.55 + 0.45 * fLow));
+          bar(fMid + fHigh, Color.lerp(bandMid, mix, 0.2)!.withValues(alpha: 0.75 + 0.25 * fMid));
+          bar(fHigh, Color.lerp(bandHigh, Colors.white, 0.3 * fHigh)!.withValues(alpha: 0.85));
           continue;
         }
       }
@@ -467,7 +470,7 @@ class WaveformPainter extends CustomPainter {
     final r = (bandLow.r * b.$1 + bandMid.r * b.$2 + bandHigh.r * b.$3) / total;
     final g = (bandLow.g * b.$1 + bandMid.g * b.$2 + bandHigh.g * b.$3) / total;
     final bl = (bandLow.b * b.$1 + bandMid.b * b.$2 + bandHigh.b * b.$3) / total;
-    final v = 0.55 + 0.45 * amp.clamp(0.0, 1.0);
+    final v = 0.7 + 0.3 * amp.clamp(0.0, 1.0);
     return Color.from(alpha: 1, red: (r * v).clamp(0, 1), green: (g * v).clamp(0, 1), blue: (bl * v).clamp(0, 1));
   }
 
