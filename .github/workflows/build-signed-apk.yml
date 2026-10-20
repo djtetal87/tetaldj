@@ -1,0 +1,118 @@
+name: Build signed APKs
+
+on:
+  workflow_dispatch:
+    inputs:
+      release_tag:
+        description: 'Existing release tag to attach APKs to (e.g. v1.0.5). Leave empty for artifacts only.'
+        required: false
+        type: string
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    env:
+      PUB_CACHE: ${{ github.workspace }}/.pub-cache
+      SOURCE_DATE_EPOCH: "0"
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v5
+
+      - name: Set up Java
+        uses: actions/setup-java@v5
+        with:
+          distribution: temurin
+          java-version: "17"
+
+      # Same Flutter pin as F-Droid: checkout the .metadata revision (not flutter-action git-ref).
+      - name: Install Flutter
+        run: |
+          set -euo pipefail
+          rev=$(sed -n -E 's/.*revision: "(.*)"/\1/p' .metadata | head -n1)
+          test -n "$rev"
+          git clone --filter=blob:none https://github.com/flutter/flutter.git "$HOME/flutter"
+          git -C "$HOME/flutter" fetch --depth 1 origin "$rev"
+          git -C "$HOME/flutter" checkout --force FETCH_HEAD
+          echo "$HOME/flutter/bin" >> "$GITHUB_PATH"
+          echo "FLUTTER_ROOT=$HOME/flutter" >> "$GITHUB_ENV"
+          echo "Flutter revision $rev"
+
+      - name: Flutter config
+        run: |
+          set -euo pipefail
+          flutter config --no-analytics
+          flutter --version
+          rev=$(sed -n -E 's/.*revision: "(.*)"/\1/p' .metadata | head -n1)
+          flutter --version | grep -F "${rev:0:10}"
+
+      - name: Disable dependency metadata in APK
+        run: echo "fdroid=true" >> android/gradle.properties
+
+      # Match fdroiddata recipe (no --enforce-lockfile).
+      - name: Pub get
+        run: flutter pub get
+
+      - name: Patch jni build-id
+        run: |
+          set -euo pipefail
+          shopt -s nullglob
+          files=("$PUB_CACHE"/hosted/pub.dev/jni-*/src/CMakeLists.txt)
+          if ((${#files[@]} == 0)); then
+            echo "No jni CMakeLists.txt found under $PUB_CACHE"
+            ls -la "$PUB_CACHE/hosted/pub.dev" | head -50
+            exit 1
+          fi
+          sed -i -e 's/-Wl,/-Wl,--build-id=none,/' "${files[@]}"
+
+      - name: Set up signing
+        env:
+          KEYSTORE_BASE64: ${{ secrets.KEYSTORE_BASE64 }}
+          KEYSTORE_PASSWORD: ${{ secrets.KEYSTORE_PASSWORD }}
+          KEY_PASSWORD: ${{ secrets.KEY_PASSWORD }}
+          KEY_ALIAS: ${{ secrets.KEY_ALIAS }}
+        run: |
+          set -euo pipefail
+          test -n "${KEYSTORE_BASE64:-}"
+          test -n "${KEYSTORE_PASSWORD:-}"
+          test -n "${KEY_PASSWORD:-}"
+          test -n "${KEY_ALIAS:-}"
+          echo "$KEYSTORE_BASE64" | base64 -d > android/app/bb3d.keystore
+          printf '%s\n' \
+            "storePassword=$KEYSTORE_PASSWORD" \
+            "keyPassword=$KEY_PASSWORD" \
+            "keyAlias=$KEY_ALIAS" \
+            "storeFile=bb3d.keystore" \
+            > android/key.properties
+
+      - name: Build armeabi-v7a
+        run: flutter build apk --release --split-per-abi --target-platform=android-arm -Pfdroid=true
+
+      - name: Build arm64-v8a
+        run: flutter build apk --release --split-per-abi --target-platform=android-arm64 -Pfdroid=true
+
+      - name: Build x86_64
+        run: flutter build apk --release --split-per-abi --target-platform=android-x64 -Pfdroid=true
+
+      - name: Upload APKs
+        uses: actions/upload-artifact@v4
+        with:
+          name: sidedeck-apks
+          path: |
+            build/app/outputs/flutter-apk/app-armeabi-v7a-release.apk
+            build/app/outputs/flutter-apk/app-arm64-v8a-release.apk
+            build/app/outputs/flutter-apk/app-x86_64-release.apk
+          if-no-files-found: error
+
+      - name: Attach to GitHub release
+        if: inputs.release_tag != ''
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ inputs.release_tag }}
+          files: |
+            build/app/outputs/flutter-apk/app-armeabi-v7a-release.apk
+            build/app/outputs/flutter-apk/app-arm64-v8a-release.apk
+            build/app/outputs/flutter-apk/app-x86_64-release.apk
+          fail_on_unmatched_files: true
