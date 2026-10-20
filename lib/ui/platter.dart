@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:math' as math;
 
 import 'package:flutter/material.dart';
@@ -27,6 +28,8 @@ class Platter extends StatefulWidget {
 
 class _PlatterState extends State<Platter> {
   double? _lastAngle;
+  Duration? _lastTime;
+  Timer? _still;
 
   DeckState get d => widget.dj.deck(widget.deck);
 
@@ -35,11 +38,13 @@ class _PlatterState extends State<Platter> {
     return math.atan2(local.dy - c.dy, local.dx - c.dx);
   }
 
-  // Vinyl mode: a finger on the platter holds the record; dragging moves
-  // it (one turn = 1.8 s, like 33 rpm); lifting lets it play again.
+  // Vinyl mode: a finger on the platter holds the record and the audio
+  // follows the hand (one turn = 1.8 s, like 33 rpm, in either direction);
+  // lifting lets it play again from there.
   void _onDown(PointerDownEvent e) {
     if (!d.loaded) return;
     _lastAngle = _angleOf(e.localPosition);
+    _lastTime = e.timeStamp;
     HapticFeedback.selectionClick();
     widget.dj.platterTouch(widget.deck);
   }
@@ -51,17 +56,29 @@ class _PlatterState extends State<Platter> {
     if (delta > math.pi) delta -= 2 * math.pi;
     if (delta < -math.pi) delta += 2 * math.pi;
     _lastAngle = a;
-    if (delta.abs() < 1e-4) return;
+    final dt = (e.timeStamp - (_lastTime ?? e.timeStamp)).inMicroseconds / 1e6;
+    _lastTime = e.timeStamp;
+    if (dt <= 0) return;
     final seconds = delta / (2 * math.pi) * 1.8;
-    widget.dj.seekTo(
-      widget.deck,
-      (d.position + seconds).clamp(0.0, d.duration),
-    );
+    widget.dj.platterScratch(widget.deck, seconds / dt);
+    // No new movement for a bit → the hand is holding the record still.
+    _still?.cancel();
+    _still = Timer(const Duration(milliseconds: 70), () {
+      if (_lastAngle != null) widget.dj.platterScratch(widget.deck, 0);
+    });
   }
 
   void _onEnd([dynamic _]) {
+    _still?.cancel();
     _lastAngle = null;
+    _lastTime = null;
     widget.dj.platterRelease(widget.deck);
+  }
+
+  @override
+  void dispose() {
+    _still?.cancel();
+    super.dispose();
   }
 
   @override

@@ -115,3 +115,11 @@ que no se puede probar fuera de macOS: el log queda en el summary del run.
   mode FX enciende/apaga; mantener un pad abre intensidad y tiempo.
 - `test/screenshot_test.dart` renderiza la pantalla a PNG con el motor
   precargado (`LD_PRELOAD`), para revisar el layout sin teléfono.
+
+### v0.3.1 — scratch real en el plato (2026-10-20)
+- Motor: `dj_scratch_begin/rate/end`. Mientras el plato está tocado el deck
+  deja de reproducir y lee del caché a la velocidad de la mano (frames por
+  frame, negativa hacia atrás), con suavizado por bloque, EQ/filtro/fader
+  aplicados; al soltar re-prima el stretcher en la nueva posición.
+- Plato: velocidad angular con los timestamps del puntero (una vuelta =
+  1,8 s); 70 ms sin movimiento = mano quieta = silencio.

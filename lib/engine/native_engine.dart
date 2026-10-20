@@ -200,6 +200,14 @@ class NativeEngine {
       .lookupFunction<_RecordSecondsC, double Function(Pointer<Void>)>(
         'dj_record_seconds',
       );
+  late final _scratchBegin = _lib
+      .lookupFunction<_DeckVoidC, void Function(Pointer<Void>, int)>('dj_scratch_begin');
+  late final _scratchRate = _lib
+      .lookupFunction<_SetFloatDeckC, void Function(Pointer<Void>, int, double)>(
+        'dj_scratch_rate',
+      );
+  late final _scratchEnd = _lib
+      .lookupFunction<_DeckVoidC, void Function(Pointer<Void>, int)>('dj_scratch_end');
   late final _setFx = _lib
       .lookupFunction<_SetFxC, void Function(Pointer<Void>, int, int, double, double)>(
         'dj_set_fx',
@@ -293,6 +301,12 @@ class NativeEngine {
   }
 
   void recordStop() => _recordStop(_handle);
+
+  /// Vinyl scratch: the deck follows [rate] (1 = forward at normal speed,
+  /// negative = backwards) between [scratchBegin] and [scratchEnd].
+  void scratchBegin(int deck) => _scratchBegin(_handle, deck);
+  void scratchRate(int deck, double rate) => _scratchRate(_handle, deck, rate);
+  void scratchEnd(int deck) => _scratchEnd(_handle, deck);
 
   /// Insert effect: type 0 none, 1 echo, 2 reverb, 3 flanger, 4 phaser,
   /// 5 crush, 6 gate; amount 0..1; beats for the tempo-synced ones.

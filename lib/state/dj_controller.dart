@@ -517,7 +517,8 @@ class DjController extends ChangeNotifier {
     notifyListeners();
   }
 
-  /// Vinyl-style platter touch: hold pauses the audio, drag scrubs, release
+  /// Vinyl-style platter: holding the record stops normal playback and the
+  /// deck follows the hand's velocity (scratch, both directions); lifting
   /// resumes if it was playing.
   final List<bool> _platterResume = [false, false];
 
@@ -528,19 +529,28 @@ class DjController extends ChangeNotifier {
     if (d.playing) {
       _engine.play(deckIndex, false);
       d.playing = false;
-      notifyListeners();
     }
+    _engine.scratchBegin(deckIndex);
+    notifyListeners();
+  }
+
+  /// [rate] 1 = normal speed forward, negative = backwards.
+  void platterScratch(int deckIndex, double rate) {
+    if (!deck(deckIndex).loaded) return;
+    _engine.scratchRate(deckIndex, rate.clamp(-4.0, 4.0));
   }
 
   void platterRelease(int deckIndex) {
     final d = deck(deckIndex);
     if (!d.loaded) return;
+    _engine.scratchEnd(deckIndex);
+    d.position = _engine.position(deckIndex);
     if (_platterResume[deckIndex]) {
       _platterResume[deckIndex] = false;
       _engine.play(deckIndex, true);
       d.playing = true;
-      notifyListeners();
     }
+    notifyListeners();
   }
 
   final List<double> _nudgeBend = [0, 0]; // temporary pitch bend while held

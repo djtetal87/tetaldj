@@ -80,6 +80,12 @@ const char* dj_last_error(void);
 /// tempo-synced ones (echo time, LFO period, gate period).
 void dj_set_fx(DjEngine engine, int deck, int type, float amount, float beats);
 
+/// Vinyl scratch: between begin and end the deck follows [rate] (1 = normal
+/// speed forward, negative = backwards) instead of playing.
+void dj_scratch_begin(DjEngine engine, int deck);
+void dj_scratch_rate(DjEngine engine, int deck, float rate);
+void dj_scratch_end(DjEngine engine, int deck);
+
 /// Record the stereo master mix to a 16-bit WAV at [path]. Returns 1 on success.
 int dj_record_start(DjEngine engine, const char* path);
 void dj_record_stop(DjEngine engine);

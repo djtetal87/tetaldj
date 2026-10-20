@@ -102,6 +102,11 @@ struct Deck {
   float rate = 1.0f;
   bool keylock = true;
   DeckFx fx;
+  // Scratch: while the platter is held the deck follows the hand's velocity
+  // (engine frames per output frame, negative = backwards) instead of playing.
+  std::atomic<bool> scratching{false};
+  std::atomic<float> scratchRate{0.0f};
+  double scratchCur = 0.0;
   float filter = 0.0f; // -1 HPF .. 0 flat .. +1 LPF
   float eqLow = 0, eqMid = 0, eqHigh = 0;
   float eqLowG = 1, eqMidG = 1, eqHighG = 1;
@@ -709,6 +714,40 @@ struct Engine {
       d.applyJump((double)jumpTo);
     }
 
+    if (!filled && d.scratching.load(std::memory_order_relaxed)) {
+      // Smooth the hand's velocity per block (≈5 ms) so direction changes
+      // don't click, then read straight from the cache in either direction.
+      const double target = (double)d.scratchRate.load(std::memory_order_relaxed);
+      d.scratchCur += (target - d.scratchCur) * 0.35;
+      const double step = std::max(-4.0, std::min(4.0, d.scratchCur));
+      const double total = (double)d.totalFrames;
+      if (std::fabs(step) < 1.0e-4) {
+        std::fill(left, left + frames, 0.0f);
+        std::fill(right, right + frames, 0.0f);
+      } else {
+        d.cache.readRun(d.playhead, step, left, right, frames);
+        d.playhead = std::max(0.0, std::min(total - 1.0, d.playhead + (double)frames * step));
+        const float g = d.gain * d.fader;
+        for (int i = 0; i < frames; ++i) {
+          float l = left[i];
+          float r = right[i];
+          const float loL = d.eqLoL.process(l);
+          const float midL = d.eqMidLpL.process(d.eqMidHpL.process(l));
+          const float hiL = d.eqHiL.process(l);
+          l = loL * d.eqLowG + midL * d.eqMidG + hiL * d.eqHighG;
+          const float loR = d.eqLoR.process(r);
+          const float midR = d.eqMidLpR.process(d.eqMidHpR.process(r));
+          const float hiR = d.eqHiR.process(r);
+          r = loR * d.eqLowG + midR * d.eqMidG + hiR * d.eqHighG;
+          left[i] = d.filtL.process(l) * g;
+          right[i] = d.filtR.process(r) * g;
+        }
+      }
+      d.hintHot();
+      filled = true;
+      d.pauseXf = false;
+    }
+
     if (!filled) {
       if (!d.playing && d.gate <= 0.0f) {
         std::fill(left, left + frames, 0.0f);
@@ -737,8 +776,9 @@ struct Engine {
     }
 
     const float step = 1.0f / 256.0f;
+    const bool audible = d.playing || d.scratching.load(std::memory_order_relaxed);
     for (int i = 0; i < frames; ++i) {
-      if (d.playing) {
+      if (audible) {
         d.gate = std::min(1.0f, d.gate + step);
       } else {
         d.gate = std::max(0.0f, d.gate - step);
@@ -1527,6 +1567,30 @@ void dj_set_fx(DjEngine engine, int deck, int type, float amount, float beats) {
   d.fx.type.store(type);
   d.fx.amount.store(std::max(0.0f, std::min(1.0f, amount)));
   d.fx.beats.store(std::max(0.0625f, std::min(8.0f, beats)));
+}
+
+void dj_scratch_begin(DjEngine engine, int deck) {
+  if (deck < 0 || deck > 1) return;
+  Deck& d = asEngine(engine)->decks[deck];
+  d.scratchRate.store(0.0f);
+  d.scratchCur = 0.0;
+  d.scratching.store(true);
+}
+
+void dj_scratch_rate(DjEngine engine, int deck, float rate) {
+  if (deck < 0 || deck > 1) return;
+  asEngine(engine)->decks[deck].scratchRate.store(std::max(-4.0f, std::min(4.0f, rate)));
+}
+
+void dj_scratch_end(DjEngine engine, int deck) {
+  if (deck < 0 || deck > 1) return;
+  Deck& d = asEngine(engine)->decks[deck];
+  d.scratchRate.store(0.0f);
+  d.scratching.store(false);
+  std::lock_guard<std::mutex> lock(d.mutex);
+  // Resume from where the hand left the record: re-prime the stretcher there.
+  d.flushStretcher();
+  d.stretchPrimed = false;
 }
 
 } // extern "C"
