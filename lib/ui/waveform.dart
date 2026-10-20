@@ -92,9 +92,10 @@ class WaveformPainter extends CustomPainter {
       peak = math.max(peak, math.max(min[i].abs(), max[i].abs()));
     }
 
-    final overviewH = overviewHeight;
+    final overviewH = math.min(overviewHeight, size.height);
     final waveTop = overviewH;
     final waveH = size.height - overviewH;
+    final overviewOnly = waveH < 2;
     final mid = waveTop + waveH / 2;
 
     final playRate = rate.clamp(0.5, 2.0);
@@ -143,6 +144,7 @@ class WaveformPainter extends CustomPainter {
         flag: false,
       );
     }
+    if (overviewOnly) return;
 
     for (var px = 0.0; px < size.width; px++) {
       final t0 = viewStart + (px / size.width) * viewDur;
@@ -532,6 +534,7 @@ class WaveformView extends StatelessWidget {
     this.high,
     this.zoom = 8.0,
     this.showOverview = true,
+    this.overviewOnly = false,
   });
 
   final double cuePoint;
@@ -542,6 +545,8 @@ class WaveformView extends StatelessWidget {
   /// Seconds of audio visible in the scrolling wave.
   final double zoom;
   final bool showOverview;
+  /// Draw only the full-track strip, filling the whole widget.
+  final bool overviewOnly;
 
   final Float32List min;
   final Float32List max;
@@ -587,7 +592,11 @@ class WaveformView extends StatelessWidget {
             low: low,
             mid: mid,
             high: high,
-            overviewHeight: showOverview ? WaveformPainter.overviewH : 0,
+            overviewHeight: overviewOnly
+                ? h
+                : showOverview
+                    ? WaveformPainter.overviewH
+                    : 0,
           ),
           size: Size(w, h),
         );
@@ -597,7 +606,8 @@ class WaveformView extends StatelessWidget {
         return GestureDetector(
           onTapDown: (d) {
             final nx = (d.localPosition.dx / w).clamp(0.0, 1.0);
-            if (showOverview && d.localPosition.dy < WaveformPainter.overviewH) {
+            if (overviewOnly ||
+                (showOverview && d.localPosition.dy < WaveformPainter.overviewH)) {
               onOverviewSeek?.call(nx * duration);
               return;
             }
