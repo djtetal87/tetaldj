@@ -181,6 +181,10 @@ class NativeEngine {
       .lookupFunction<_BeatJumpC, void Function(Pointer<Void>, int, int)>(
         'dj_clear_hotcue',
       );
+  late final _setKeylock = _lib
+      .lookupFunction<_BeatJumpC, void Function(Pointer<Void>, int, int)>(
+        'dj_set_keylock',
+      );
   late final _waveBins = _lib.lookupFunction<_WaveBinsC, int Function()>(
     'dj_waveform_bins',
   );
@@ -312,6 +316,10 @@ class NativeEngine {
   double hotcue(int deck, int index) => _getHotcue(_handle, deck, index);
 
   void clearHotcue(int deck, int index) => _clearHotcue(_handle, deck, index);
+
+  /// Keep the pitch when the tempo changes (master tempo).
+  void setKeylock(int deck, bool enabled) =>
+      _setKeylock(_handle, deck, enabled ? 1 : 0);
 
   ({Float32List min, Float32List max}) waveform(int deck) {
     final bins = _waveBins();

@@ -25,6 +25,7 @@ class DeckState {
   int key = -1;
   double rate = 1;
   bool synced = false;
+  bool keylock = true;
   double beatOffset = 0;
   double gain = 1;
   double fader = 1;
@@ -229,6 +230,7 @@ class DjController extends ChangeNotifier {
     d.waveMid = bands.mid;
     d.waveHigh = bands.high;
     _engine.setRate(deckIndex, 1);
+    _engine.setKeylock(deckIndex, d.keylock);
     _nudgeBend[deckIndex] = 0;
     _engine.setGain(deckIndex, d.gain);
     _engine.setFader(deckIndex, d.fader);
@@ -435,6 +437,39 @@ class DjController extends ChangeNotifier {
     _applyRate(deckIndex);
     _followMasterBpm(deckIndex);
     notifyListeners();
+  }
+
+  void setKeylock(int deckIndex, bool enabled) {
+    final d = deck(deckIndex);
+    d.keylock = enabled;
+    _engine.setKeylock(deckIndex, enabled);
+    notifyListeners();
+  }
+
+  /// Vinyl-style platter touch: hold pauses the audio, drag scrubs, release
+  /// resumes if it was playing.
+  final List<bool> _platterResume = [false, false];
+
+  void platterTouch(int deckIndex) {
+    final d = deck(deckIndex);
+    if (!d.loaded) return;
+    _platterResume[deckIndex] = d.playing;
+    if (d.playing) {
+      _engine.play(deckIndex, false);
+      d.playing = false;
+      notifyListeners();
+    }
+  }
+
+  void platterRelease(int deckIndex) {
+    final d = deck(deckIndex);
+    if (!d.loaded) return;
+    if (_platterResume[deckIndex]) {
+      _platterResume[deckIndex] = false;
+      _engine.play(deckIndex, true);
+      d.playing = true;
+      notifyListeners();
+    }
   }
 
   final List<double> _nudgeBend = [0, 0]; // temporary pitch bend while held

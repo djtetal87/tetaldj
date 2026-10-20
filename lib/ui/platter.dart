@@ -27,7 +27,6 @@ class Platter extends StatefulWidget {
 
 class _PlatterState extends State<Platter> {
   double? _lastAngle;
-  int _nudgeDir = 0; // -1 slower, 0 none, +1 faster
 
   DeckState get d => widget.dj.deck(widget.deck);
 
@@ -36,13 +35,16 @@ class _PlatterState extends State<Platter> {
     return math.atan2(local.dy - c.dy, local.dx - c.dx);
   }
 
-  void _onStart(DragStartDetails e) {
+  // Vinyl mode: a finger on the platter holds the record; dragging moves
+  // it (one turn = 1.8 s, like 33 rpm); lifting lets it play again.
+  void _onDown(PointerDownEvent e) {
     if (!d.loaded) return;
     _lastAngle = _angleOf(e.localPosition);
     HapticFeedback.selectionClick();
+    widget.dj.platterTouch(widget.deck);
   }
 
-  void _onUpdate(DragUpdateDetails e) {
+  void _onUpdate(PointerMoveEvent e) {
     if (!d.loaded || _lastAngle == null) return;
     final a = _angleOf(e.localPosition);
     var delta = a - _lastAngle!;
@@ -50,28 +52,16 @@ class _PlatterState extends State<Platter> {
     if (delta < -math.pi) delta += 2 * math.pi;
     _lastAngle = a;
     if (delta.abs() < 1e-4) return;
-    if (d.playing) {
-      final dir = delta > 0 ? 1 : -1;
-      if (dir != _nudgeDir) {
-        widget.dj.startNudge(widget.deck, faster: dir > 0);
-        _nudgeDir = dir;
-      }
-    } else {
-      // One full turn scrubs 1.8 s, like a 33 rpm platter.
-      final seconds = delta / (2 * math.pi) * 1.8;
-      widget.dj.seekTo(
-        widget.deck,
-        (d.position + seconds).clamp(0.0, d.duration),
-      );
-    }
+    final seconds = delta / (2 * math.pi) * 1.8;
+    widget.dj.seekTo(
+      widget.deck,
+      (d.position + seconds).clamp(0.0, d.duration),
+    );
   }
 
   void _onEnd([dynamic _]) {
     _lastAngle = null;
-    if (_nudgeDir != 0) {
-      widget.dj.endNudge(widget.deck);
-      _nudgeDir = 0;
-    }
+    widget.dj.platterRelease(widget.deck);
   }
 
   @override
@@ -84,11 +74,12 @@ class _PlatterState extends State<Platter> {
     final heard = d.bpm * d.rate;
     final pitch = (d.rate - 1) * 100;
 
-    return GestureDetector(
-      onPanStart: _onStart,
-      onPanUpdate: _onUpdate,
-      onPanEnd: _onEnd,
-      onPanCancel: _onEnd,
+    return Listener(
+      onPointerDown: _onDown,
+      onPointerMove: _onUpdate,
+      onPointerUp: _onEnd,
+      onPointerCancel: _onEnd,
+      behavior: HitTestBehavior.opaque,
       child: SizedBox(
         width: s,
         height: s,
@@ -272,7 +263,7 @@ class PitchStrip extends StatelessWidget {
   final bool tempoMode;
   final VoidCallback onToggle;
 
-  static const range = 0.08;
+  static const range = 0.16;
 
   @override
   Widget build(BuildContext context) {
@@ -299,6 +290,42 @@ class PitchStrip extends StatelessWidget {
                 children: [
                   _label('VOL', !tempoMode, accent),
                   _label('BPM', tempoMode, accent),
+                ],
+              ),
+            ),
+          ),
+          const SizedBox(height: 4),
+          GestureDetector(
+            onTap: () => dj.setKeylock(deck, !d.keylock),
+            child: Container(
+              width: 58,
+              height: 22,
+              alignment: Alignment.center,
+              decoration: BoxDecoration(
+                color: d.keylock ? accent.withValues(alpha: 0.2) : SideDeckTheme.panelAlt,
+                borderRadius: BorderRadius.circular(11),
+                border: Border.all(
+                  color: d.keylock ? accent : SideDeckTheme.stroke,
+                ),
+              ),
+              child: Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Icon(
+                    d.keylock ? Icons.lock : Icons.lock_open,
+                    size: 10,
+                    color: d.keylock ? accent : SideDeckTheme.muted,
+                  ),
+                  const SizedBox(width: 3),
+                  Text(
+                    'KEY',
+                    style: TextStyle(
+                      fontSize: 9,
+                      fontWeight: FontWeight.w800,
+                      letterSpacing: 0.8,
+                      color: d.keylock ? accent : SideDeckTheme.muted,
+                    ),
+                  ),
                 ],
               ),
             ),
