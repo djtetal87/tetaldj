@@ -4,6 +4,7 @@ import 'dart:math' as math;
 
 import 'package:flutter/foundation.dart';
 import 'package:sidedeck/engine/analysis_cache.dart';
+import 'package:sidedeck/engine/hotcue_store.dart';
 import 'package:sidedeck/engine/native_engine.dart';
 import 'package:sidedeck/engine/track_analyzer.dart';
 import 'package:sidedeck/engine/usb_output.dart';
@@ -31,6 +32,12 @@ class DeckState {
   double eqLow = 0;
   double eqMid = 0;
   double eqHigh = 0;
+
+  /// Main cue point in seconds (0 = start of track until the DJ sets one).
+  double cuePoint = 0;
+
+  /// Hot cue positions in seconds; a negative value means the slot is empty.
+  final List<double> hotcues = List<double>.filled(HotCueStore.slots, -1);
   Float32List waveMin = Float32List(0);
   Float32List waveMax = Float32List(0);
 }
@@ -51,6 +58,7 @@ class DjController extends ChangeNotifier {
   late final Timer _ticker;
   StreamSubscription<UsbHotplugEvent>? _usbSub;
   final AnalysisCache _analysisCache = AnalysisCache.instance;
+  final HotCueStore _cueStore = HotCueStore.instance;
   final Set<int> _declinedMixerIds = {};
 
   final DeckState deckA = DeckState();
@@ -195,6 +203,21 @@ class DjController extends ChangeNotifier {
     d.loopEnabled = false;
     d.loopStart = 0;
     d.loopEnd = 0;
+    // The engine resets cues on load; restore the ones saved for this track.
+    d.cuePoint = 0;
+    for (var i = 0; i < HotCueStore.slots; i++) {
+      d.hotcues[i] = -1;
+    }
+    final savedCues = await _cueStore.load(path);
+    savedCues.forEach((slot, seconds) {
+      if (slot < 0) {
+        d.cuePoint = seconds;
+        _engine.setCueAt(deckIndex, seconds);
+      } else if (slot < HotCueStore.slots) {
+        d.hotcues[slot] = seconds;
+        _engine.setHotcue(deckIndex, slot, seconds);
+      }
+    });
     final wave = _engine.waveform(deckIndex);
     d.waveMin = wave.min;
     d.waveMax = wave.max;
@@ -253,6 +276,78 @@ class DjController extends ChangeNotifier {
     final next = !d.playing;
     _engine.play(deckIndex, next);
     d.playing = next;
+    notifyListeners();
+  }
+
+  // ---------------------------------------------------------------------------
+  // Cue & hot cues (TetalDJ)
+  // ---------------------------------------------------------------------------
+
+  /// Main CUE button, Serato/VDJ style:
+  /// - paused  → set the cue point at the playhead;
+  /// - playing → jump back to the cue point and pause.
+  void cue(int deckIndex) {
+    final d = deck(deckIndex);
+    if (!d.loaded) return;
+    if (d.playing) {
+      _engine.play(deckIndex, false);
+      d.playing = false;
+      _engine.jumpCue(deckIndex);
+    } else {
+      _engine.setCue(deckIndex);
+      d.cuePoint = _engine.cue(deckIndex);
+      final path = d.path;
+      if (path != null) _cueStore.set(path, -1, d.cuePoint);
+    }
+    d.position = _engine.position(deckIndex);
+    _readLoop(deckIndex);
+    notifyListeners();
+  }
+
+  /// Play from the cue point (classic "cue + play"): jump and start.
+  void cuePlay(int deckIndex) {
+    final d = deck(deckIndex);
+    if (!d.loaded) return;
+    _engine.jumpCue(deckIndex);
+    _engine.play(deckIndex, true);
+    d.playing = true;
+    d.position = _engine.position(deckIndex);
+    _readLoop(deckIndex);
+    notifyListeners();
+  }
+
+  bool hasHotcue(int deckIndex, int slot) => deck(deckIndex).hotcues[slot] >= 0;
+
+  /// Hot cue pad tap: empty slot → store the playhead; set slot → jump there.
+  /// Jumping while paused also starts playback, like a real controller.
+  void hotcue(int deckIndex, int slot) {
+    final d = deck(deckIndex);
+    if (!d.loaded || slot < 0 || slot >= HotCueStore.slots) return;
+    if (d.hotcues[slot] < 0) {
+      _engine.setHotcue(deckIndex, slot, -1);
+      d.hotcues[slot] = _engine.hotcue(deckIndex, slot);
+      final path = d.path;
+      if (path != null) _cueStore.set(path, slot, d.hotcues[slot]);
+    } else {
+      _engine.jumpHotcue(deckIndex, slot);
+      if (!d.playing) {
+        _engine.play(deckIndex, true);
+        d.playing = true;
+      }
+    }
+    d.position = _engine.position(deckIndex);
+    _readLoop(deckIndex);
+    notifyListeners();
+  }
+
+  /// Long press on a pad: clear that hot cue.
+  void clearHotcue(int deckIndex, int slot) {
+    final d = deck(deckIndex);
+    if (!d.loaded || slot < 0 || slot >= HotCueStore.slots) return;
+    _engine.clearHotcue(deckIndex, slot);
+    d.hotcues[slot] = -1;
+    final path = d.path;
+    if (path != null) _cueStore.clear(path, slot);
     notifyListeners();
   }
 

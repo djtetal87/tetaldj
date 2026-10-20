@@ -26,6 +26,8 @@ void dj_play(DjEngine engine, int deck, int playing);
 void dj_seek(DjEngine engine, int deck, double seconds);
 void dj_set_cue(DjEngine engine, int deck);
 void dj_jump_cue(DjEngine engine, int deck);
+void dj_set_cue_at(DjEngine engine, int deck, double seconds);
+double dj_get_cue(DjEngine engine, int deck);
 
 double dj_position(DjEngine engine, int deck);
 double dj_duration(DjEngine engine, int deck);

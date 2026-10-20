@@ -253,6 +253,8 @@ class _HomePageState extends State<HomePage> {
                   loopEnabled: d.loopEnabled,
                   loopStart: d.loopStart,
                   loopEnd: d.loopEnd,
+                  cuePoint: d.cuePoint,
+                  hotcues: d.hotcues,
                   onSeek: d.loaded ? (t) => _dj.seek(i, t) : null,
                   onOverviewSeek: d.loaded ? (t) => _dj.seekTo(i, t) : null,
                 ),
@@ -316,6 +318,12 @@ class _HomePageState extends State<HomePage> {
                     right: 4,
                     top: overview + 2,
                     child: _gridButton(i, accent),
+                  ),
+                if (d.loaded && _gridEditDeck != i)
+                  Positioned(
+                    left: play + 8,
+                    top: overview + 20,
+                    child: _cuePads(i, accent),
                   ),
                 if (d.loaded && _gridEditDeck == i)
                   Positioned(
@@ -588,6 +596,79 @@ class _HomePageState extends State<HomePage> {
           onStep: () => _dj.nudgeBpm(deck, 0.1),
           child: _wavePad(accent, child: const Text('+', style: _wavePadText)),
         ),
+      ],
+    );
+  }
+
+  static const _cuePadSize = 34.0;
+  static const _cuePadGap = 4.0;
+
+  /// CUE + 4 hot cue pads (TetalDJ). Tap an empty pad to set it at the
+  /// playhead, tap a set pad to jump there, long-press to clear it.
+  Widget _cuePads(int deck, Color accent) {
+    final d = _dj.deck(deck);
+
+    Widget pad({
+      required Widget child,
+      required Color color,
+      required bool filled,
+      VoidCallback? onTap,
+      VoidCallback? onLongPress,
+    }) {
+      return GestureDetector(
+        onTap: onTap,
+        onLongPress: onLongPress,
+        child: SizedBox(
+          width: _cuePadSize,
+          height: _cuePadSize,
+          child: DecoratedBox(
+            decoration: BoxDecoration(
+              color: filled ? color.withValues(alpha: 0.92) : const Color(0xCC111111),
+              borderRadius: BorderRadius.circular(6),
+              border: Border.all(color: color, width: 1.4),
+            ),
+            child: Center(child: child),
+          ),
+        ),
+      );
+    }
+
+    return Row(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        pad(
+          color: WaveformPainter.cueColor,
+          filled: d.playing,
+          onTap: () => _dj.cue(deck),
+          onLongPress: () => _dj.cuePlay(deck),
+          child: Text(
+            'CUE',
+            style: TextStyle(
+              fontSize: 9,
+              fontWeight: FontWeight.w900,
+              letterSpacing: 0.4,
+              color: d.playing ? Colors.black : Colors.white,
+            ),
+          ),
+        ),
+        const SizedBox(width: _cuePadGap + 2),
+        for (var slot = 0; slot < d.hotcues.length; slot++) ...[
+          pad(
+            color: WaveformPainter.hotcueColors[slot],
+            filled: d.hotcues[slot] >= 0,
+            onTap: () => _dj.hotcue(deck, slot),
+            onLongPress: () => _dj.clearHotcue(deck, slot),
+            child: Text(
+              '${slot + 1}',
+              style: TextStyle(
+                fontSize: 14,
+                fontWeight: FontWeight.w900,
+                color: d.hotcues[slot] >= 0 ? Colors.black : Colors.white,
+              ),
+            ),
+          ),
+          if (slot < d.hotcues.length - 1) const SizedBox(width: _cuePadGap),
+        ],
       ],
     );
   }

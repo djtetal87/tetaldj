@@ -1,6 +1,7 @@
 import 'dart:math' as math;
 import 'dart:typed_data';
 
+import 'package:flutter/foundation.dart' show listEquals;
 import 'package:flutter/material.dart';
 
 /// Horizontal scrolling DJ waveform: playhead pinned center, regular beat grid.
@@ -19,7 +20,18 @@ class WaveformPainter extends CustomPainter {
     this.loopEnd = 0,
     this.zoomWindowSec = 8,
     this.showJumpZone = false,
+    this.cuePoint = 0,
+    this.hotcues = const [],
   });
+
+  /// Serato-style hot cue pad colors (slot 1..4).
+  static const hotcueColors = [
+    Color(0xFFFF3B30),
+    Color(0xFFFF9500),
+    Color(0xFFFFD60A),
+    Color(0xFF34C759),
+  ];
+  static const cueColor = Color(0xFFFFFFFF);
 
   final Float32List min;
   final Float32List max;
@@ -36,6 +48,10 @@ class WaveformPainter extends CustomPainter {
   final double loopEnd;
   final double zoomWindowSec;
   final bool showJumpZone;
+  /// Main cue point (seconds).
+  final double cuePoint;
+  /// Hot cue positions (seconds); negative = empty slot.
+  final List<double> hotcues;
 
   @override
   void paint(Canvas canvas, Size size) {
@@ -92,6 +108,14 @@ class WaveformPainter extends CustomPainter {
       tick: true,
     );
     _drawLoopOverview(canvas, size, overviewH);
+    _drawCueMarkers(
+      canvas,
+      size,
+      xForTime: (t) => (t / duration) * size.width,
+      y0: 0,
+      y1: overviewH,
+      flag: false,
+    );
 
     for (var px = 0.0; px < size.width; px++) {
       final t0 = viewStart + (px / size.width) * viewDur;
@@ -141,6 +165,14 @@ class WaveformPainter extends CustomPainter {
     }
 
     _drawLoopZoomed(canvas, size, waveTop, xForTime);
+    _drawCueMarkers(
+      canvas,
+      size,
+      xForTime: xForTime,
+      y0: waveTop,
+      y1: size.height,
+      flag: true,
+    );
 
     if (showJumpZone) {
       _drawJumpZone(canvas, size, waveTop);
@@ -254,6 +286,55 @@ class WaveformPainter extends CustomPainter {
     tp.paint(canvas, o);
   }
 
+  /// Main cue (white) and hot cue (colored) markers. [flag] adds the small
+  /// numbered tag at the top of the zoomed wave.
+  void _drawCueMarkers(
+    Canvas canvas,
+    Size size, {
+    required double Function(double) xForTime,
+    required double y0,
+    required double y1,
+    required bool flag,
+  }) {
+    void marker(double t, Color c, String? label) {
+      final x = xForTime(t);
+      if (x < -8 || x > size.width + 8) return;
+      canvas.drawLine(
+        Offset(x, y0),
+        Offset(x, y1),
+        Paint()
+          ..color = c.withValues(alpha: flag ? 0.95 : 0.8)
+          ..strokeWidth = flag ? 2 : 1.5,
+      );
+      if (!flag) return;
+      const w = 14.0;
+      const h = 12.0;
+      final rect = RRect.fromRectAndRadius(
+        Rect.fromLTWH(x, y0 + 2, w, h),
+        const Radius.circular(2),
+      );
+      canvas.drawRRect(rect, Paint()..color = c);
+      if (label == null) return;
+      final tp = TextPainter(
+        text: TextSpan(
+          text: label,
+          style: const TextStyle(
+            fontSize: 9,
+            fontWeight: FontWeight.w900,
+            color: Colors.black,
+          ),
+        ),
+        textDirection: TextDirection.ltr,
+      )..layout();
+      tp.paint(canvas, Offset(x + (w - tp.width) / 2, y0 + 2 + (h - tp.height) / 2));
+    }
+
+    if (cuePoint > 0) marker(cuePoint, cueColor, 'C');
+    for (var i = 0; i < hotcues.length && i < hotcueColors.length; i++) {
+      if (hotcues[i] >= 0) marker(hotcues[i], hotcueColors[i], '${i + 1}');
+    }
+  }
+
   void _drawLoopOverview(Canvas canvas, Size size, double overviewH) {
     if (!loopEnabled || loopEnd <= loopStart || duration <= 0) return;
     final x0 = ((loopStart / duration) * size.width).clamp(0.0, size.width);
@@ -336,6 +417,8 @@ class WaveformPainter extends CustomPainter {
         oldDelegate.loopEnabled != loopEnabled ||
         oldDelegate.loopStart != loopStart ||
         oldDelegate.loopEnd != loopEnd ||
+        oldDelegate.cuePoint != cuePoint ||
+        !listEquals(oldDelegate.hotcues, hotcues) ||
         oldDelegate.showJumpZone != showJumpZone;
   }
 }
@@ -356,7 +439,12 @@ class WaveformView extends StatelessWidget {
     this.loopEnd = 0,
     this.onSeek,
     this.onOverviewSeek,
+    this.cuePoint = 0,
+    this.hotcues = const [],
   });
+
+  final double cuePoint;
+  final List<double> hotcues;
 
   final Float32List min;
   final Float32List max;
@@ -399,6 +487,8 @@ class WaveformView extends StatelessWidget {
             loopEnd: loopEnd,
             zoomWindowSec: zoom,
             showJumpZone: onSeek != null,
+            cuePoint: cuePoint,
+            hotcues: hotcues,
           ),
           size: Size(w, h),
         );

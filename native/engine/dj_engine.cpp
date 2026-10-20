@@ -1100,6 +1100,26 @@ void dj_set_cue(DjEngine engine, int deck) {
   d.cuePoint = d.playhead / (double)d.sampleRate;
 }
 
+/** TetalDJ: set the main cue point at an absolute position (seconds). */
+void dj_set_cue_at(DjEngine engine, int deck, double seconds) {
+  if (deck < 0 || deck > 1) {
+    return;
+  }
+  Deck& d = asEngine(engine)->decks[deck];
+  std::lock_guard<std::mutex> lock(d.mutex);
+  d.cuePoint = std::max(0.0, seconds);
+}
+
+/** TetalDJ: current main cue point in seconds. */
+double dj_get_cue(DjEngine engine, int deck) {
+  if (deck < 0 || deck > 1) {
+    return 0.0;
+  }
+  Deck& d = asEngine(engine)->decks[deck];
+  std::lock_guard<std::mutex> lock(d.mutex);
+  return d.cuePoint;
+}
+
 void dj_jump_cue(DjEngine engine, int deck) {
   if (deck < 0 || deck > 1) {
     return;

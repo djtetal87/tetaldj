@@ -34,6 +34,9 @@ typedef _GetKeyC = Int32 Function(Pointer<Void>, Int32);
 typedef _NudgeC = Void Function(Pointer<Void>, Int32, Float);
 typedef _SetLoopC = Void Function(Pointer<Void>, Int32, Int32, Float);
 typedef _BeatJumpC = Void Function(Pointer<Void>, Int32, Int32);
+typedef _DeckVoidC = Void Function(Pointer<Void>, Int32);
+typedef _SetHotcueC = Void Function(Pointer<Void>, Int32, Int32, Double);
+typedef _GetHotcueC = Double Function(Pointer<Void>, Int32, Int32);
 typedef _WaveBinsC = Int32 Function();
 typedef _WaveCopyC = Int32 Function(
   Pointer<Void>,
@@ -141,6 +144,34 @@ class NativeEngine {
       .lookupFunction<_BeatJumpC, void Function(Pointer<Void>, int, int)>(
         'dj_beat_jump',
       );
+  // Cue / hot cues (TetalDJ): these exist in the C++ engine but upstream
+  // SideDeck never bound them.
+  late final _setCue = _lib
+      .lookupFunction<_DeckVoidC, void Function(Pointer<Void>, int)>('dj_set_cue');
+  late final _jumpCue = _lib
+      .lookupFunction<_DeckVoidC, void Function(Pointer<Void>, int)>('dj_jump_cue');
+  late final _setCueAt = _lib
+      .lookupFunction<_SeekC, void Function(Pointer<Void>, int, double)>(
+        'dj_set_cue_at',
+      );
+  late final _getCue = _lib
+      .lookupFunction<_PosC, double Function(Pointer<Void>, int)>('dj_get_cue');
+  late final _setHotcue = _lib
+      .lookupFunction<_SetHotcueC, void Function(Pointer<Void>, int, int, double)>(
+        'dj_set_hotcue',
+      );
+  late final _jumpHotcue = _lib
+      .lookupFunction<_BeatJumpC, void Function(Pointer<Void>, int, int)>(
+        'dj_jump_hotcue',
+      );
+  late final _getHotcue = _lib
+      .lookupFunction<_GetHotcueC, double Function(Pointer<Void>, int, int)>(
+        'dj_get_hotcue',
+      );
+  late final _clearHotcue = _lib
+      .lookupFunction<_BeatJumpC, void Function(Pointer<Void>, int, int)>(
+        'dj_clear_hotcue',
+      );
   late final _waveBins = _lib.lookupFunction<_WaveBinsC, int Function()>(
     'dj_waveform_bins',
   );
@@ -237,6 +268,29 @@ class NativeEngine {
   double loopStart(int deck) => _loopStart(_handle, deck);
   double loopEnd(int deck) => _loopEnd(_handle, deck);
   void beatJump(int deck, int beats) => _beatJump(_handle, deck, beats);
+
+  /// Set the main cue point at the current playhead.
+  void setCue(int deck) => _setCue(_handle, deck);
+
+  /// Jump the playhead back to the main cue point.
+  void jumpCue(int deck) => _jumpCue(_handle, deck);
+
+  /// Set the main cue point at an absolute position in seconds.
+  void setCueAt(int deck, double seconds) => _setCueAt(_handle, deck, seconds);
+
+  /// Current main cue point in seconds.
+  double cue(int deck) => _getCue(_handle, deck);
+
+  /// Store hot cue [index] (0..3). A negative [seconds] means "at playhead".
+  void setHotcue(int deck, int index, double seconds) =>
+      _setHotcue(_handle, deck, index, seconds);
+
+  void jumpHotcue(int deck, int index) => _jumpHotcue(_handle, deck, index);
+
+  /// Position of hot cue [index] in seconds, or a negative value if unset.
+  double hotcue(int deck, int index) => _getHotcue(_handle, deck, index);
+
+  void clearHotcue(int deck, int index) => _clearHotcue(_handle, deck, index);
 
   ({Float32List min, Float32List max}) waveform(int deck) {
     final bins = _waveBins();
