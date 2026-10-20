@@ -59,6 +59,8 @@ void dj_beat_jump(DjEngine engine, int deck, int beats);
 
 int dj_waveform_bins(void);
 int dj_waveform_copy(DjEngine engine, int deck, float* min_out, float* max_out, int bins);
+/// Per-bin RMS of <200 Hz, 200 Hz-2 kHz and >2 kHz, normalised 0..1 (3-colour waveform).
+int dj_waveform_bands_copy(DjEngine engine, int deck, float* low_out, float* mid_out, float* high_out, int bins);
 
 /** Decode a 60s prefix (22 kHz mono) + BPM/key/grid. Uses ID3 TBPM/TKEY when present. */
 int dj_analyze_file(const char* path, float* bpm, int* key, float* beat_offset);

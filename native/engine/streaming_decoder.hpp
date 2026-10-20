@@ -11,6 +11,7 @@
 #include <cstring>
 #include <memory>
 #include <string>
+#include <cmath>
 #include <vector>
 
 #include "last_error.hpp"
@@ -400,16 +401,40 @@ struct StreamingDecoder {
 };
 
 inline void scanWaveform(StreamingDecoder& dec, int bins, std::vector<float>& waveMin,
-                         std::vector<float>& waveMax) {
+                         std::vector<float>& waveMax,
+                         std::vector<float>* bandLow = nullptr,
+                         std::vector<float>* bandMid = nullptr,
+                         std::vector<float>* bandHigh = nullptr) {
   waveMin.assign((size_t)std::max(1, bins), 0.0f);
   waveMax.assign((size_t)std::max(1, bins), 0.0f);
+  const bool bands = bandLow && bandMid && bandHigh;
+  std::vector<double> accLow, accMid, accHigh;
+  std::vector<uint32_t> count;
+  if (bands) {
+    accLow.assign((size_t)std::max(1, bins), 0.0);
+    accMid.assign((size_t)std::max(1, bins), 0.0);
+    accHigh.assign((size_t)std::max(1, bins), 0.0);
+    count.assign((size_t)std::max(1, bins), 0);
+  }
   if (dec.totalFrames == 0 || bins < 1) {
+    if (bands) {
+      bandLow->assign((size_t)std::max(1, bins), 0.0f);
+      bandMid->assign((size_t)std::max(1, bins), 0.0f);
+      bandHigh->assign((size_t)std::max(1, bins), 0.0f);
+    }
     return;
   }
   dec.seek(0);
   constexpr uint64_t kBuf = 4096;
   std::vector<float> buf((size_t)kBuf * 2);
   uint64_t pos = 0;
+  // Two one-pole low-passes split the signal into <200 Hz, 200 Hz-2 kHz and
+  // >2 kHz for the Serato-style three-colour waveform (red / green / blue).
+  const double sr = dec.sampleRate > 0 ? (double)dec.sampleRate : 44100.0;
+  const double aLow = std::exp(-2.0 * 3.14159265358979 * 200.0 / sr);
+  const double aMid = std::exp(-2.0 * 3.14159265358979 * 2000.0 / sr);
+  double lp1 = 0.0, lp2 = 0.0;  // two cascaded poles per band for a steeper split
+  double mp1 = 0.0, mp2 = 0.0;
   while (pos < dec.totalFrames) {
     const uint64_t got = dec.readStereo(buf.data(), kBuf);
     if (got == 0) {
@@ -421,7 +446,42 @@ inline void scanWaveform(StreamingDecoder& dec, int bins, std::vector<float>& wa
       const float s = 0.5f * (buf[(size_t)i * 2] + buf[(size_t)i * 2 + 1]);
       waveMin[(size_t)b] = std::min(waveMin[(size_t)b], s);
       waveMax[(size_t)b] = std::max(waveMax[(size_t)b], s);
+      if (bands) {
+        lp1 = aLow * lp1 + (1.0 - aLow) * s;
+        lp2 = aLow * lp2 + (1.0 - aLow) * lp1;
+        mp1 = aMid * mp1 + (1.0 - aMid) * s;
+        mp2 = aMid * mp2 + (1.0 - aMid) * mp1;
+        const double low = lp2;
+        const double mid = mp2 - lp2;
+        const double high = (double)s - mp2;
+        accLow[(size_t)b] += low * low;
+        accMid[(size_t)b] += mid * mid;
+        accHigh[(size_t)b] += high * high;
+        count[(size_t)b]++;
+      }
     }
     pos += got;
+  }
+  if (bands) {
+    bandLow->assign((size_t)bins, 0.0f);
+    bandMid->assign((size_t)bins, 0.0f);
+    bandHigh->assign((size_t)bins, 0.0f);
+    double peak = 1e-9;
+    for (int b = 0; b < bins; ++b) {
+      if (count[(size_t)b] == 0) continue;
+      const double n = (double)count[(size_t)b];
+      const float l = (float)std::sqrt(accLow[(size_t)b] / n);
+      const float m = (float)std::sqrt(accMid[(size_t)b] / n);
+      const float h = (float)std::sqrt(accHigh[(size_t)b] / n);
+      (*bandLow)[(size_t)b] = l;
+      (*bandMid)[(size_t)b] = m;
+      (*bandHigh)[(size_t)b] = h;
+      peak = std::max(peak, (double)std::max(l, std::max(m, h)));
+    }
+    for (int b = 0; b < bins; ++b) {
+      (*bandLow)[(size_t)b] = (float)std::min(1.0, (*bandLow)[(size_t)b] / peak);
+      (*bandMid)[(size_t)b] = (float)std::min(1.0, (*bandMid)[(size_t)b] / peak);
+      (*bandHigh)[(size_t)b] = (float)std::min(1.0, (*bandHigh)[(size_t)b] / peak);
+    }
   }
 }

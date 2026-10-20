@@ -6,7 +6,8 @@ import 'package:sidedeck/engine/usb_output.dart';
 import 'package:sidedeck/state/dj_controller.dart';
 import 'package:sidedeck/theme/sidedeck_theme.dart';
 
-/// Mixer under the waveforms: taller EQ/filter faders, xfader, library/settings.
+/// Compact mixer between the two pad blocks: EQ + filter per deck, channel
+/// faders, crossfader and the library / settings buttons.
 class MixerStrip extends StatelessWidget {
   const MixerStrip({
     super.key,
@@ -22,30 +23,22 @@ class MixerStrip extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     if (controller.externalMixer) {
-      return ColoredBox(
-        color: SideDeckTheme.panel,
-        child: Padding(
-          padding: const EdgeInsets.fromLTRB(6, 4, 6, 4),
-          child: _externalCenter(),
-        ),
-      );
+      return _externalCenter();
     }
-
     final a = controller.deckA;
     final b = controller.deckB;
-
-    return ColoredBox(
-      color: SideDeckTheme.panel,
-      child: Padding(
-        padding: const EdgeInsets.fromLTRB(4, 6, 4, 4),
-        child: Row(
-          children: [
-            Expanded(flex: 5, child: _eqBlock(0, a, SideDeckTheme.accentA)),
-            Expanded(flex: 6, child: _center()),
-            Expanded(flex: 5, child: _eqBlock(1, b, SideDeckTheme.accentB)),
-          ],
-        ),
-      ),
+    return Row(
+      children: [
+        Expanded(flex: 5, child: _eqBlock(0, a, SideDeckTheme.accentA)),
+        const SizedBox(width: 4),
+        _channelFader(0, a, SideDeckTheme.accentA),
+        const SizedBox(width: 4),
+        Expanded(flex: 4, child: _center()),
+        const SizedBox(width: 4),
+        _channelFader(1, b, SideDeckTheme.accentB),
+        const SizedBox(width: 4),
+        Expanded(flex: 5, child: _eqBlock(1, b, SideDeckTheme.accentB)),
+      ],
     );
   }
 
@@ -55,78 +48,127 @@ class MixerStrip extends StatelessWidget {
         Row(
           mainAxisAlignment: MainAxisAlignment.center,
           children: [
-            _iconBtn(Icons.library_music, 'Library', onLibrary),
+            _iconBtn(Icons.library_music_outlined, 'Library', onLibrary),
+            const SizedBox(width: 10),
             _iconBtn(Icons.settings_outlined, 'Settings', onSettings),
           ],
+        ),
+        const Spacer(),
+        SliderTheme(
+          data: SliderThemeData(
+            trackHeight: 6,
+            activeTrackColor: SideDeckTheme.accentA,
+            inactiveTrackColor: SideDeckTheme.accentB,
+            thumbColor: Colors.white,
+            thumbShape: const RoundSliderThumbShape(enabledThumbRadius: 10),
+            overlayShape: SliderComponentShape.noOverlay,
+          ),
+          child: CenterDetentSlider(
+            value: controller.xfader,
+            onChanged: controller.setXfader,
+          ),
         ),
         const Text(
           'CROSSFADER',
           style: TextStyle(
-            fontSize: 9,
+            fontSize: 8,
             letterSpacing: 1.2,
+            fontWeight: FontWeight.w700,
             color: SideDeckTheme.muted,
           ),
         ),
-        Expanded(
-          child: SliderTheme(
-            data: const SliderThemeData(
-              trackHeight: 8,
-              thumbShape: RoundSliderThumbShape(enabledThumbRadius: 11),
-            ),
-            child: CenterDetentSlider(
-              value: controller.xfader,
-              onChanged: controller.setXfader,
-            ),
-          ),
-        ),
+        const SizedBox(height: 2),
       ],
     );
   }
 
   Widget _externalCenter() {
     final name = UsbOutput.deviceLabel(controller.usbDeviceName);
-    return Padding(
-      padding: const EdgeInsets.symmetric(horizontal: 4),
-      child: Column(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          Row(
-            mainAxisAlignment: MainAxisAlignment.center,
-            children: [
-              _iconBtn(Icons.library_music, 'Library', onLibrary),
-              _iconBtn(Icons.settings_outlined, 'Settings', onSettings),
-            ],
+    return Column(
+      mainAxisAlignment: MainAxisAlignment.center,
+      children: [
+        Row(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            _iconBtn(Icons.library_music_outlined, 'Library', onLibrary),
+            const SizedBox(width: 10),
+            _iconBtn(Icons.settings_outlined, 'Settings', onSettings),
+          ],
+        ),
+        const SizedBox(height: 6),
+        const Text(
+          'EXTERNAL MIXER',
+          textAlign: TextAlign.center,
+          style: TextStyle(
+            fontSize: 9,
+            letterSpacing: 1.0,
+            fontWeight: FontWeight.w700,
+            color: SideDeckTheme.muted,
           ),
-          const Text(
-            'EXTERNAL MIXER',
+        ),
+        if (name.isNotEmpty)
+          Text(
+            name,
+            maxLines: 1,
+            overflow: TextOverflow.ellipsis,
             textAlign: TextAlign.center,
-            style: TextStyle(
-              fontSize: 9,
-              letterSpacing: 1.0,
-              color: SideDeckTheme.muted,
-            ),
+            style: const TextStyle(fontSize: 10, color: SideDeckTheme.text),
           ),
-          if (name.isNotEmpty)
-            Text(
-              name,
-              maxLines: 1,
-              overflow: TextOverflow.ellipsis,
-              textAlign: TextAlign.center,
-              style: const TextStyle(fontSize: 10, color: SideDeckTheme.text),
-            ),
-        ],
-      ),
+      ],
     );
   }
 
   Widget _iconBtn(IconData icon, String tooltip, VoidCallback onTap) {
-    return IconButton(
-      tooltip: tooltip,
-      visualDensity: VisualDensity.compact,
-      padding: EdgeInsets.zero,
-      constraints: const BoxConstraints(minWidth: 36, minHeight: 32),
-      onPressed: onTap,
-      icon: Icon(icon, size: 22),
+    return Material(
+      color: SideDeckTheme.panelAlt,
+      borderRadius: BorderRadius.circular(6),
+      child: InkWell(
+        onTap: onTap,
+        borderRadius: BorderRadius.circular(6),
+        child: Container(
+          width: 40,
+          height: 28,
+          alignment: Alignment.center,
+          decoration: BoxDecoration(
+            borderRadius: BorderRadius.circular(6),
+            border: Border.all(color: SideDeckTheme.stroke),
+          ),
+          child: Icon(icon, size: 18, color: SideDeckTheme.text),
+        ),
+      ),
+    );
+  }
+
+  Widget _channelFader(int deck, DeckState d, Color accent) {
+    return SizedBox(
+      width: 30,
+      child: Column(
+        children: [
+          Expanded(
+            child: RotatedBox(
+              quarterTurns: 3,
+              child: SliderTheme(
+                data: SliderThemeData(
+                  trackHeight: 4,
+                  thumbColor: Colors.white,
+                  activeTrackColor: accent,
+                  inactiveTrackColor: SideDeckTheme.panelAlt,
+                  thumbShape: const RoundSliderThumbShape(enabledThumbRadius: 8),
+                  overlayShape: SliderComponentShape.noOverlay,
+                ),
+                child: Slider(
+                  value: d.fader.clamp(0.0, 1.0),
+                  onChanged: (v) => controller.setFader(deck, v),
+                ),
+              ),
+            ),
+          ),
+          const Text(
+            'VOL',
+            style: TextStyle(fontSize: 8, color: SideDeckTheme.muted, letterSpacing: 0.5),
+          ),
+        ],
+      ),
     );
   }
 
@@ -164,11 +206,11 @@ class MixerStrip extends StatelessWidget {
             quarterTurns: 3,
             child: SliderTheme(
               data: SliderThemeData(
-                trackHeight: 5,
+                trackHeight: 4,
                 thumbColor: accent,
-                activeTrackColor: accent,
+                activeTrackColor: accent.withValues(alpha: 0.8),
                 inactiveTrackColor: SideDeckTheme.panelAlt,
-                thumbShape: const RoundSliderThumbShape(enabledThumbRadius: 9),
+                thumbShape: const RoundSliderThumbShape(enabledThumbRadius: 7),
                 overlayShape: SliderComponentShape.noOverlay,
               ),
               child: CenterDetentSlider(
@@ -182,7 +224,7 @@ class MixerStrip extends StatelessWidget {
         ),
         Text(
           label,
-          style: const TextStyle(fontSize: 9, color: SideDeckTheme.muted, letterSpacing: 0.3),
+          style: const TextStyle(fontSize: 8, color: SideDeckTheme.muted, letterSpacing: 0.5),
         ),
       ],
     );

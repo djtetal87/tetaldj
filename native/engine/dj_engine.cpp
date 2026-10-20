@@ -46,7 +46,7 @@ namespace {
 
 // ~10–20 ms per bin on typical tracks so the zoomed view has real transients.
 constexpr int kWaveformBins = 32768;
-constexpr int kHotCues = 4;
+constexpr int kHotCues = 8;
 constexpr int kMaxCallbackFrames = 2048;
 constexpr int kMaxStretchInFrames = kMaxCallbackFrames * 2 + 256;
 // Loop wrap crossfade, in source frames (~10 ms at 48 kHz). Long enough to
@@ -103,7 +103,7 @@ struct Deck {
   float eqLow = 0, eqMid = 0, eqHigh = 0;
   float eqLowG = 1, eqMidG = 1, eqHighG = 1;
   double cuePoint = 0.0;
-  double hotcues[kHotCues] = {-1, -1, -1, -1};
+  double hotcues[kHotCues] = {-1, -1, -1, -1, -1, -1, -1, -1};
   bool loopEnabled = false;
   float loopBars = 1.0f;
   double loopStart = 0.0;
@@ -122,6 +122,9 @@ struct Deck {
 
   std::vector<float> waveMin;
   std::vector<float> waveMax;
+  std::vector<float> bandLow;
+  std::vector<float> bandMid;
+  std::vector<float> bandHigh;
 
   LR4 eqLoL, eqLoR;         // LPF @ 246 Hz
   LR4 eqMidHpL, eqMidHpR;   // HPF @ 246 Hz
@@ -1049,7 +1052,7 @@ int dj_load_with_analysis(DjEngine engine, int deck, const char* path, float bpm
   }
   d.cache.hintEngineFrames(0, (int64_t)sr * 2);
 
-  std::vector<float> wmin, wmax;
+  std::vector<float> wmin, wmax, blow, bmid, bhigh;
   {
     StreamingDecoder scan;
     if (!scan.open(path)) {
@@ -1059,7 +1062,7 @@ int dj_load_with_analysis(DjEngine engine, int deck, const char* path, float bpm
       }
       return 0;
     }
-    scanWaveform(scan, kWaveformBins, wmin, wmax);
+    scanWaveform(scan, kWaveformBins, wmin, wmax, &blow, &bmid, &bhigh);
   }
 
   d.cache.waitChunk(0, 2500);
@@ -1078,6 +1081,9 @@ int dj_load_with_analysis(DjEngine engine, int deck, const char* path, float bpm
   d.beatOffset = analysis.beatOffsetSec;
   d.waveMin = std::move(wmin);
   d.waveMax = std::move(wmax);
+  d.bandLow = std::move(blow);
+  d.bandMid = std::move(bmid);
+  d.bandHigh = std::move(bhigh);
   d.flushStretcher();
   d.resetFilters();
   d.ensureStretcher();
@@ -1143,6 +1149,9 @@ void dj_unload(DjEngine engine, int deck) {
     d.pauseXf = false;
     d.waveMin.clear();
     d.waveMax.clear();
+    d.bandLow.clear();
+    d.bandMid.clear();
+    d.bandHigh.clear();
     d.totalFrames = 0;
     d.path.clear();
   }
@@ -1365,7 +1374,7 @@ void dj_set_loop(DjEngine engine, int deck, int enabled, float bars) {
   }
   Deck& d = asEngine(engine)->decks[deck];
   std::lock_guard<std::mutex> lock(d.mutex);
-  d.loopBars = std::max(0.25f, std::min(8.0f, bars));
+  d.loopBars = std::max(0.0625f, std::min(8.0f, bars));
   const bool wasOn = d.loopEnabled;
   d.loopEnabled = enabled != 0;
   if (!d.loopEnabled) {
@@ -1460,6 +1469,24 @@ int dj_waveform_copy(DjEngine engine, int deck, float* min_out, float* max_out, 
   }
   std::memcpy(min_out, d.waveMin.data(), sizeof(float) * n);
   std::memcpy(max_out, d.waveMax.data(), sizeof(float) * n);
+  return n;
+}
+
+int dj_waveform_bands_copy(DjEngine engine, int deck, float* low_out, float* mid_out,
+                           float* high_out, int bins) {
+  if (deck < 0 || deck > 1 || !low_out || !mid_out || !high_out || bins <= 0) {
+    return 0;
+  }
+  Deck& d = asEngine(engine)->decks[deck];
+  std::lock_guard<std::mutex> lock(d.mutex);
+  const int n = std::min(bins, (int)std::min(d.bandLow.size(),
+                                             std::min(d.bandMid.size(), d.bandHigh.size())));
+  if (n <= 0) {
+    return 0;
+  }
+  std::memcpy(low_out, d.bandLow.data(), sizeof(float) * n);
+  std::memcpy(mid_out, d.bandMid.data(), sizeof(float) * n);
+  std::memcpy(high_out, d.bandHigh.data(), sizeof(float) * n);
   return n;
 }
 

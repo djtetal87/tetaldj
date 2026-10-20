@@ -1,10 +1,11 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
-import 'package:sidedeck/engine/music_utils.dart';
 import 'package:sidedeck/engine/usb_output.dart';
 import 'package:sidedeck/state/dj_controller.dart';
 import 'package:sidedeck/state/library_controller.dart';
 import 'package:sidedeck/theme/sidedeck_theme.dart';
+import 'package:sidedeck/ui/deck_header.dart';
+import 'package:sidedeck/ui/deck_pads.dart';
 import 'package:sidedeck/ui/library_drawer.dart';
 import 'package:sidedeck/ui/mixer_strip.dart';
 import 'package:sidedeck/ui/settings_page.dart';
@@ -21,6 +22,7 @@ class _HomePageState extends State<HomePage> {
   late final DjController _dj;
   late final LibraryController _library;
   int? _gridEditDeck;
+  final _padMode = [PadMode.hotcue, PadMode.hotcue];
   bool _mixerDialogOpen = false;
   BuildContext? _mixerDialogContext;
 
@@ -147,17 +149,16 @@ class _HomePageState extends State<HomePage> {
       animation: Listenable.merge([_dj, _library]),
       builder: (context, _) {
         return Scaffold(
-          backgroundColor: Colors.black,
+          backgroundColor: SideDeckTheme.bg,
           body: SafeArea(
             child: Column(
               children: [
                 if (_dj.engineError != null) _errorBar(),
-                Expanded(flex: 5, child: _waveDeck(0, SideDeckTheme.accentA)),
-                Expanded(flex: 5, child: _waveDeck(1, SideDeckTheme.accentB)),
-                if (_dj.externalMixer)
-                  _mixerBar()
-                else
-                  Expanded(flex: 7, child: _mixerBar(expand: true)),
+                Expanded(child: _deckBlock(0)),
+                const SizedBox(height: 3),
+                Expanded(child: _deckBlock(1)),
+                const SizedBox(height: 4),
+                _performancePanel(),
               ],
             ),
           ),
@@ -166,23 +167,143 @@ class _HomePageState extends State<HomePage> {
     );
   }
 
-  Widget _mixerBar({bool expand = false}) {
-    return Stack(
-      fit: expand ? StackFit.expand : StackFit.loose,
-      children: [
-        MixerStrip(
-          controller: _dj,
-          onLibrary: _openLibrary,
-          onSettings: _openSettings,
-        ),
-        if (_gridEditDeck != null)
-          Positioned.fill(
-            child: GestureDetector(
-              behavior: HitTestBehavior.opaque,
-              onTap: () => setState(() => _gridEditDeck = null),
+  // ------------------------------------------------------------------ decks
+
+  Widget _deckBlock(int i) {
+    final d = _dj.deck(i);
+    final accent = SideDeckTheme.accent(i);
+    return Padding(
+      padding: const EdgeInsets.symmetric(horizontal: 6),
+      child: Column(
+        children: [
+          DeckHeader(
+            deck: i,
+            state: d,
+            dj: _dj,
+            gridEditing: _gridEditDeck == i,
+            onToggleGrid: () =>
+                setState(() => _gridEditDeck = _gridEditDeck == i ? null : i),
+            onLoad: _openLibrary,
+          ),
+          Expanded(
+            child: ClipRRect(
+              borderRadius: BorderRadius.circular(5),
+              child: Stack(
+                fit: StackFit.expand,
+                children: [
+                  WaveformView(
+                    min: d.waveMin,
+                    max: d.waveMax,
+                    low: d.waveLow,
+                    mid: d.waveMid,
+                    high: d.waveHigh,
+                    position: d.position,
+                    duration: d.duration,
+                    beatOffset: d.beatOffset,
+                    bpm: d.bpm,
+                    rate: d.rate,
+                    color: accent,
+                    loopEnabled: d.loopEnabled,
+                    loopStart: d.loopStart,
+                    loopEnd: d.loopEnd,
+                    cuePoint: d.cuePoint,
+                    hotcues: d.hotcues,
+                    zoom: 6,
+                    onSeek: d.loaded ? (t) => _dj.seek(i, t) : null,
+                    onOverviewSeek: d.loaded ? (t) => _dj.seekTo(i, t) : null,
+                  ),
+                  if (!d.loaded)
+                    Positioned.fill(
+                      child: GestureDetector(
+                        behavior: HitTestBehavior.opaque,
+                        onTap: _openLibrary,
+                        child: Center(
+                          child: Text(
+                            'DECK ${i == 0 ? 'A' : 'B'}',
+                            style: TextStyle(
+                              fontSize: 22,
+                              fontWeight: FontWeight.w900,
+                              letterSpacing: 4,
+                              color: accent.withValues(alpha: 0.25),
+                            ),
+                          ),
+                        ),
+                      ),
+                    ),
+                  if (_gridEditDeck != null && _gridEditDeck != i)
+                    Positioned.fill(
+                      child: GestureDetector(
+                        behavior: HitTestBehavior.opaque,
+                        onTap: () => setState(() => _gridEditDeck = null),
+                      ),
+                    ),
+                  if (d.loaded && _gridEditDeck == i)
+                    Positioned(
+                      left: 6,
+                      bottom: 4,
+                      child: _gridEditorBar(i, accent),
+                    ),
+                ],
+              ),
             ),
           ),
-      ],
+        ],
+      ),
+    );
+  }
+
+  // ------------------------------------------------------------ performance
+
+  Widget _performancePanel() {
+    final content = Padding(
+      padding: const EdgeInsets.fromLTRB(6, 6, 6, 6),
+      child: Row(
+        children: [
+          DeckPads(
+            deck: 0,
+            dj: _dj,
+            mode: _padMode[0],
+            onMode: (m) => setState(() => _padMode[0] = m),
+          ),
+          const SizedBox(width: 8),
+          Expanded(
+            child: MixerStrip(
+              controller: _dj,
+              onLibrary: _openLibrary,
+              onSettings: _openSettings,
+            ),
+          ),
+          const SizedBox(width: 8),
+          DeckPads(
+            deck: 1,
+            dj: _dj,
+            mode: _padMode[1],
+            onMode: (m) => setState(() => _padMode[1] = m),
+          ),
+        ],
+      ),
+    );
+    return SizedBox(
+      height: 150,
+      child: DecoratedBox(
+        decoration: const BoxDecoration(
+          color: SideDeckTheme.panel,
+          border: Border(top: BorderSide(color: SideDeckTheme.stroke)),
+        ),
+        child: Stack(
+          fit: StackFit.expand,
+          children: [
+            content,
+            if (_gridEditDeck != null)
+              Positioned.fill(
+                child: GestureDetector(
+                  behavior: HitTestBehavior.opaque,
+                  onTap: () => setState(() => _gridEditDeck = null),
+                ),
+              ),
+          ],
+        ),
+      ),
     );
   }
 
@@ -215,221 +336,23 @@ class _HomePageState extends State<HomePage> {
     );
   }
 
-  Widget _waveDeck(int i, Color accent) {
-    final d = _dj.deck(i);
-    final remaining = (d.duration - d.position).clamp(0.0, 99999.0);
-    final info = d.loaded
-        ? '${d.title}   ${_bpmLabel(d)}   ${formatKey(d.key)}   −${formatDuration(remaining)}'
-        : 'Deck ${i == 0 ? 'A' : 'B'} — tap to load a track';
-
-    return Padding(
-      padding: const EdgeInsets.fromLTRB(4, 2, 4, 0),
-      child: ClipRRect(
-        borderRadius: BorderRadius.circular(4),
-        child: LayoutBuilder(
-          builder: (context, constraints) {
-            final overview = WaveformPainter.overviewH;
-            const pad = _overlayPad;
-            final play = d.loaded
-                ? (constraints.maxHeight - overview - 6).clamp(40.0, 120.0)
-                : 0.0;
-            final playFoot = pad + play;
-            final nudgeFoot = pad + _wavePadSize * 2 + _wavePadGap;
-            final w = constraints.maxWidth;
-            final loopGap = WaveformPainter.jumpZoneLeft(w) - playFoot;
-            final bpmGap = w - WaveformPainter.jumpZoneRight(w) - nudgeFoot;
-            return Stack(
-              fit: StackFit.expand,
-              children: [
-                WaveformView(
-                  min: d.waveMin,
-                  max: d.waveMax,
-                  position: d.position,
-                  duration: d.duration,
-                  beatOffset: d.beatOffset,
-                  bpm: d.bpm,
-                  rate: d.rate,
-                  color: accent,
-                  loopEnabled: d.loopEnabled,
-                  loopStart: d.loopStart,
-                  loopEnd: d.loopEnd,
-                  cuePoint: d.cuePoint,
-                  hotcues: d.hotcues,
-                  onSeek: d.loaded ? (t) => _dj.seek(i, t) : null,
-                  onOverviewSeek: d.loaded ? (t) => _dj.seekTo(i, t) : null,
-                ),
-                if (!d.loaded)
-                  Positioned.fill(
-                    child: GestureDetector(
-                      behavior: HitTestBehavior.opaque,
-                      onTap: _openLibrary,
-                    ),
-                  ),
-                Positioned(
-                  left: play + 8,
-                  right: d.loaded ? 88 : 8,
-                  top: overview + 3,
-                  child: IgnorePointer(
-                    child: Text(
-                      info,
-                      maxLines: 1,
-                      overflow: TextOverflow.ellipsis,
-                      style: TextStyle(
-                        fontWeight: FontWeight.w700,
-                        fontSize: 11,
-                        color: d.loaded ? Colors.white : SideDeckTheme.muted,
-                        shadows: const [
-                          Shadow(color: Colors.black, blurRadius: 6),
-                          Shadow(color: Colors.black, blurRadius: 12),
-                        ],
-                      ),
-                    ),
-                  ),
-                ),
-                if (d.loaded)
-                  Positioned(
-                    left: pad,
-                    top: overview,
-                    bottom: 0,
-                    child: Center(child: _play(i, d.playing, accent, play)),
-                  ),
-                if (d.loaded)
-                  Positioned(
-                    right: pad,
-                    bottom: pad,
-                    child: Row(
-                      mainAxisSize: MainAxisSize.min,
-                      children: [
-                        _holdNudge(i, faster: false, accent: accent),
-                        const SizedBox(width: _wavePadGap),
-                        _holdNudge(i, faster: true, accent: accent),
-                      ],
-                    ),
-                  ),
-                if (_gridEditDeck != null)
-                  Positioned.fill(
-                    child: GestureDetector(
-                      behavior: HitTestBehavior.opaque,
-                      onTap: () => setState(() => _gridEditDeck = null),
-                    ),
-                  ),
-                if (d.loaded)
-                  Positioned(
-                    right: 4,
-                    top: overview + 2,
-                    child: _gridButton(i, accent),
-                  ),
-                if (d.loaded && _gridEditDeck != i)
-                  Positioned(
-                    left: play + 8,
-                    top: overview + 20,
-                    child: _cuePads(i, accent),
-                  ),
-                if (d.loaded && _gridEditDeck == i)
-                  Positioned(
-                    left: play + 8,
-                    right: nudgeFoot,
-                    bottom: 4,
-                    child: _gridEditorBar(i, accent),
-                  ),
-                if (d.loaded && _gridEditDeck != i && loopGap > 0)
-                  Positioned(
-                    left: playFoot,
-                    width: loopGap,
-                    bottom: pad,
-                    child: Center(child: _waveLoop(i, accent)),
-                  ),
-                if (d.loaded && _gridEditDeck != i && bpmGap > 0)
-                  Positioned(
-                    left: WaveformPainter.jumpZoneRight(w),
-                    width: bpmGap,
-                    bottom: pad,
-                    child: Center(child: _waveBpm(i, accent)),
-                  ),
-              ],
-            );
-          },
-        ),
-      ),
-    );
-  }
-
-  String _bpmLabel(DeckState d) {
-    final heard = d.bpm * d.rate;
-    if ((d.rate - 1.0).abs() < 0.002) {
-      return '${d.bpm.toStringAsFixed(1)} BPM';
-    }
-    return '${heard.toStringAsFixed(1)} BPM  (${d.bpm.toStringAsFixed(1)})';
-  }
-
-  Widget _play(int i, bool playing, Color accent, double size) {
-    return Material(
-      color: accent.withValues(alpha: 0.55),
-      shape: const CircleBorder(),
-      elevation: 0,
-      child: InkWell(
-        customBorder: const CircleBorder(),
-        onTap: () => _dj.playPause(i),
-        child: SizedBox(
-          width: size,
-          height: size,
-          child: Icon(
-            playing ? Icons.pause : Icons.play_arrow,
-            color: Colors.white.withValues(alpha: 0.9),
-            size: size * 0.55,
-          ),
-        ),
-      ),
-    );
-  }
-
-  Widget _gridButton(int deck, Color accent) {
-    final on = _gridEditDeck == deck;
-    return Material(
-      color: on ? accent : const Color(0xCC111111),
-      borderRadius: BorderRadius.circular(6),
-      child: InkWell(
-        onTap: () => setState(() => _gridEditDeck = on ? null : deck),
-        borderRadius: BorderRadius.circular(6),
-        child: Container(
-          height: 32,
-          padding: const EdgeInsets.symmetric(horizontal: 10),
-          alignment: Alignment.center,
-          decoration: BoxDecoration(
-            borderRadius: BorderRadius.circular(6),
-            border: Border.all(color: accent.withValues(alpha: 0.85)),
-          ),
-          child: Text(
-            'GRID',
-            style: TextStyle(
-              fontSize: 11,
-              fontWeight: FontWeight.w800,
-              letterSpacing: 0.6,
-              color: on ? Colors.black : accent,
-            ),
-          ),
-        ),
-      ),
-    );
-  }
-
   Widget _gridEditorBar(int deck, Color accent) {
     Widget step(String label, VoidCallback onStep) {
       return HoldRepeatButton(
         onStep: onStep,
         child: Container(
-          width: 48,
-          height: 40,
+          width: 44,
+          height: 34,
           alignment: Alignment.center,
           decoration: BoxDecoration(
             color: SideDeckTheme.panelAlt,
-            borderRadius: BorderRadius.circular(8),
+            borderRadius: BorderRadius.circular(6),
             border: Border.all(color: accent.withValues(alpha: 0.8)),
           ),
           child: Text(
             label,
             style: const TextStyle(
-              fontSize: 20,
+              fontSize: 18,
               fontWeight: FontWeight.w800,
               height: 1,
             ),
@@ -444,10 +367,10 @@ class _HomePageState extends State<HomePage> {
         children: [
           left,
           Padding(
-            padding: const EdgeInsets.symmetric(horizontal: 8),
+            padding: const EdgeInsets.symmetric(horizontal: 6),
             child: Text(
               caption,
-              style: const TextStyle(fontSize: 11, color: SideDeckTheme.muted),
+              style: const TextStyle(fontSize: 10, color: SideDeckTheme.muted),
             ),
           ),
           right,
@@ -456,271 +379,33 @@ class _HomePageState extends State<HomePage> {
     }
 
     return Material(
-      color: const Color(0xE0111111),
+      color: const Color(0xE0101114),
       borderRadius: BorderRadius.circular(8),
       child: Padding(
-        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 6),
+        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 5),
         child: Row(
+          mainAxisSize: MainAxisSize.min,
           children: [
+            const Text(
+              'GRID',
+              style: TextStyle(
+                fontSize: 10,
+                fontWeight: FontWeight.w900,
+                letterSpacing: 1,
+                color: SideDeckTheme.muted,
+              ),
+            ),
+            const SizedBox(width: 10),
             pair(
               'beat',
               step('«', () => _dj.shiftGridBeats(deck, -1)),
               step('»', () => _dj.shiftGridBeats(deck, 1)),
             ),
-            const SizedBox(width: 16),
+            const SizedBox(width: 12),
             pair(
               '5 ms',
               step('‹', () => _dj.shiftGridMs(deck, -5)),
               step('›', () => _dj.shiftGridMs(deck, 5)),
-            ),
-          ],
-        ),
-      ),
-    );
-  }
-
-  static const _overlayPad = 4.0;
-  static const _wavePadSize = 56.0;
-  static const _wavePadGap = 6.0;
-
-  Widget _waveLoop(int deck, Color accent) {
-    final d = _dj.deck(deck);
-    final beats = d.loopBars * 4;
-    final beatsLabel = (beats - beats.round()).abs() < 0.05
-        ? '${beats.round()}'
-        : beats.toStringAsFixed(1);
-    final canHalf = beats > DjController.loopBeats.first + 0.05;
-    final canDouble = beats < DjController.loopBeats.last - 0.05;
-    return Row(
-      mainAxisSize: MainAxisSize.min,
-      children: [
-        HoldRepeatButton(
-          enabled: canHalf,
-          onStep: () => _dj.halfLoop(deck),
-          child: _wavePad(accent, child: const Text('½', style: _wavePadText)),
-        ),
-        const SizedBox(width: _wavePadGap),
-        GestureDetector(
-          onTap: () => _dj.setLoop(
-            deck,
-            !d.loopEnabled,
-            d.loopBars == 0 ? 1 : d.loopBars,
-          ),
-          child: _wavePad(
-            accent,
-            filled: d.loopEnabled,
-            child: Column(
-              mainAxisAlignment: MainAxisAlignment.center,
-              children: [
-                Text(
-                  beatsLabel,
-                  style: TextStyle(
-                    fontSize: 18,
-                    fontWeight: FontWeight.w800,
-                    height: 1,
-                    color: d.loopEnabled ? Colors.black : Colors.white,
-                  ),
-                ),
-                Text(
-                  'LOOP',
-                  style: TextStyle(
-                    fontSize: 9,
-                    fontWeight: FontWeight.w800,
-                    letterSpacing: 0.6,
-                    color: d.loopEnabled ? Colors.black : accent,
-                  ),
-                ),
-              ],
-            ),
-          ),
-        ),
-        const SizedBox(width: _wavePadGap),
-        HoldRepeatButton(
-          enabled: canDouble,
-          onStep: () => _dj.doubleLoop(deck),
-          child: _wavePad(accent, child: const Text('×2', style: _wavePadText)),
-        ),
-      ],
-    );
-  }
-
-  Widget _waveBpm(int deck, Color accent) {
-    final d = _dj.deck(deck);
-    final heard = d.bpm * d.rate;
-    final bpmLabel = d.bpm > 1 ? heard.toStringAsFixed(1) : '—';
-    return Row(
-      mainAxisSize: MainAxisSize.min,
-      children: [
-        HoldRepeatButton(
-          enabled: d.loaded && d.bpm > 1,
-          onStep: () => _dj.nudgeBpm(deck, -0.1),
-          child: _wavePad(accent, child: const Text('−', style: _wavePadText)),
-        ),
-        const SizedBox(width: _wavePadGap),
-        GestureDetector(
-          onTap: d.loaded && _dj.deck(1 - deck).loaded
-              ? () => _dj.sync(deck)
-              : null,
-          child: _wavePad(
-            accent,
-            filled: d.synced,
-            child: Column(
-              mainAxisAlignment: MainAxisAlignment.center,
-              children: [
-                Text(
-                  bpmLabel,
-                  style: TextStyle(
-                    fontSize: 16,
-                    fontWeight: FontWeight.w800,
-                    height: 1,
-                    color: d.synced ? Colors.black : Colors.white,
-                    fontFeatures: const [FontFeature.tabularFigures()],
-                  ),
-                ),
-                Text(
-                  'SYNC',
-                  style: TextStyle(
-                    fontSize: 9,
-                    fontWeight: FontWeight.w800,
-                    letterSpacing: 0.6,
-                    color: d.synced ? Colors.black : accent,
-                  ),
-                ),
-              ],
-            ),
-          ),
-        ),
-        const SizedBox(width: _wavePadGap),
-        HoldRepeatButton(
-          enabled: d.loaded && d.bpm > 1,
-          onStep: () => _dj.nudgeBpm(deck, 0.1),
-          child: _wavePad(accent, child: const Text('+', style: _wavePadText)),
-        ),
-      ],
-    );
-  }
-
-  static const _cuePadSize = 34.0;
-  static const _cuePadGap = 4.0;
-
-  /// CUE + 4 hot cue pads (TetalDJ). Tap an empty pad to set it at the
-  /// playhead, tap a set pad to jump there, long-press to clear it.
-  Widget _cuePads(int deck, Color accent) {
-    final d = _dj.deck(deck);
-
-    Widget pad({
-      required Widget child,
-      required Color color,
-      required bool filled,
-      VoidCallback? onTap,
-      VoidCallback? onLongPress,
-    }) {
-      return GestureDetector(
-        onTap: onTap,
-        onLongPress: onLongPress,
-        child: SizedBox(
-          width: _cuePadSize,
-          height: _cuePadSize,
-          child: DecoratedBox(
-            decoration: BoxDecoration(
-              color: filled ? color.withValues(alpha: 0.92) : const Color(0xCC111111),
-              borderRadius: BorderRadius.circular(6),
-              border: Border.all(color: color, width: 1.4),
-            ),
-            child: Center(child: child),
-          ),
-        ),
-      );
-    }
-
-    return Row(
-      mainAxisSize: MainAxisSize.min,
-      children: [
-        pad(
-          color: WaveformPainter.cueColor,
-          filled: d.playing,
-          onTap: () => _dj.cue(deck),
-          onLongPress: () => _dj.cuePlay(deck),
-          child: Text(
-            'CUE',
-            style: TextStyle(
-              fontSize: 9,
-              fontWeight: FontWeight.w900,
-              letterSpacing: 0.4,
-              color: d.playing ? Colors.black : Colors.white,
-            ),
-          ),
-        ),
-        const SizedBox(width: _cuePadGap + 2),
-        for (var slot = 0; slot < d.hotcues.length; slot++) ...[
-          pad(
-            color: WaveformPainter.hotcueColors[slot],
-            filled: d.hotcues[slot] >= 0,
-            onTap: () => _dj.hotcue(deck, slot),
-            onLongPress: () => _dj.clearHotcue(deck, slot),
-            child: Text(
-              '${slot + 1}',
-              style: TextStyle(
-                fontSize: 14,
-                fontWeight: FontWeight.w900,
-                color: d.hotcues[slot] >= 0 ? Colors.black : Colors.white,
-              ),
-            ),
-          ),
-          if (slot < d.hotcues.length - 1) const SizedBox(width: _cuePadGap),
-        ],
-      ],
-    );
-  }
-
-  static const _wavePadText = TextStyle(
-    fontSize: 18,
-    fontWeight: FontWeight.w800,
-    color: Colors.white,
-  );
-
-  Widget _wavePad(Color accent, {required Widget child, bool filled = false}) {
-    return SizedBox(
-      width: _wavePadSize,
-      height: _wavePadSize,
-      child: DecoratedBox(
-        decoration: BoxDecoration(
-          color: filled
-              ? accent.withValues(alpha: 0.9)
-              : const Color(0xCC111111),
-          borderRadius: BorderRadius.circular(8),
-          border: Border.all(color: accent, width: 1.6),
-        ),
-        child: Center(child: child),
-      ),
-    );
-  }
-
-  Widget _holdNudge(int deck, {required bool faster, required Color accent}) {
-    final on = _dj.deck(deck).loaded;
-    final color = on ? Colors.white : SideDeckTheme.muted;
-    return Listener(
-      onPointerDown: on ? (_) => _dj.startNudge(deck, faster: faster) : null,
-      onPointerUp: on ? (_) => _dj.endNudge(deck) : null,
-      onPointerCancel: on ? (_) => _dj.endNudge(deck) : null,
-      child: _wavePad(
-        accent,
-        child: Column(
-          mainAxisAlignment: MainAxisAlignment.center,
-          children: [
-            Icon(
-              faster ? Icons.arrow_forward : Icons.arrow_back,
-              size: 22,
-              color: color,
-            ),
-            Text(
-              'NUDGE',
-              style: TextStyle(
-                fontSize: 9,
-                fontWeight: FontWeight.w800,
-                letterSpacing: 0.6,
-                color: on ? accent : SideDeckTheme.muted,
-              ),
             ),
           ],
         ),

@@ -40,6 +40,9 @@ class DeckState {
   final List<double> hotcues = List<double>.filled(HotCueStore.slots, -1);
   Float32List waveMin = Float32List(0);
   Float32List waveMax = Float32List(0);
+  Float32List waveLow = Float32List(0);
+  Float32List waveMid = Float32List(0);
+  Float32List waveHigh = Float32List(0);
 }
 
 class DjController extends ChangeNotifier {
@@ -221,6 +224,10 @@ class DjController extends ChangeNotifier {
     final wave = _engine.waveform(deckIndex);
     d.waveMin = wave.min;
     d.waveMax = wave.max;
+    final bands = _engine.waveformBands(deckIndex);
+    d.waveLow = bands.low;
+    d.waveMid = bands.mid;
+    d.waveHigh = bands.high;
     _engine.setRate(deckIndex, 1);
     _nudgeBend[deckIndex] = 0;
     _engine.setGain(deckIndex, d.gain);
@@ -499,14 +506,14 @@ class DjController extends ChangeNotifier {
 
   void setLoop(int deckIndex, bool enabled, [double? bars]) {
     final d = deck(deckIndex);
-    if (bars != null) d.loopBars = bars.clamp(0.25, 8.0);
+    if (bars != null) d.loopBars = bars.clamp(0.0625, 8.0);
     d.loopEnabled = enabled;
     _engine.setLoop(deckIndex, enabled, d.loopBars);
     _readLoop(deckIndex);
     notifyListeners();
   }
 
-  static const loopBeats = [1.0, 2.0, 4.0, 8.0, 16.0, 32.0];
+  static const loopBeats = [0.25, 0.5, 1.0, 2.0, 4.0, 8.0, 16.0, 32.0];
 
   void halfLoop(int deckIndex) {
     final d = deck(deckIndex);

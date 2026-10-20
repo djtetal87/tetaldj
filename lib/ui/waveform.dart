@@ -22,15 +22,31 @@ class WaveformPainter extends CustomPainter {
     this.showJumpZone = false,
     this.cuePoint = 0,
     this.hotcues = const [],
+    this.low,
+    this.mid,
+    this.high,
+    this.overviewHeight = overviewH,
   });
 
-  /// Serato-style hot cue pad colors (slot 1..4).
+  /// Height of the full-track strip at the top; 0 hides it.
+  final double overviewHeight;
+
+  /// Serato-style hot cue pad colors (slot 1..8).
   static const hotcueColors = [
     Color(0xFFFF3B30),
     Color(0xFFFF9500),
     Color(0xFFFFD60A),
     Color(0xFF34C759),
+    Color(0xFF30C8E8),
+    Color(0xFF2F7BFF),
+    Color(0xFFB05CFF),
+    Color(0xFFFF4FA3),
   ];
+
+  /// Serato "RGB" waveform: bass red, mids green, highs blue.
+  static const bandLow = Color(0xFFFF2D2D);
+  static const bandMid = Color(0xFF3DFF5C);
+  static const bandHigh = Color(0xFF3D8BFF);
   static const cueColor = Color(0xFFFFFFFF);
 
   final Float32List min;
@@ -52,6 +68,15 @@ class WaveformPainter extends CustomPainter {
   final double cuePoint;
   /// Hot cue positions (seconds); negative = empty slot.
   final List<double> hotcues;
+  /// Per-bin band energy (0..1) from the engine; when present the wave is
+  /// coloured by frequency content instead of amplitude.
+  final Float32List? low;
+  final Float32List? mid;
+  final Float32List? high;
+
+  bool get _hasBands =>
+      low != null && mid != null && high != null &&
+      low!.isNotEmpty && low!.length == mid!.length && low!.length == high!.length;
 
   @override
   void paint(Canvas canvas, Size size) {
@@ -67,7 +92,7 @@ class WaveformPainter extends CustomPainter {
       peak = math.max(peak, math.max(min[i].abs(), max[i].abs()));
     }
 
-    const overviewH = WaveformPainter.overviewH;
+    final overviewH = overviewHeight;
     final waveTop = overviewH;
     final waveH = size.height - overviewH;
     final mid = waveTop + waveH / 2;
@@ -82,7 +107,7 @@ class WaveformPainter extends CustomPainter {
 
     double xForTime(double t) => ((t - viewStart) / viewDur) * size.width;
 
-    for (var px = 0.0; px < size.width; px++) {
+    for (var px = 0.0; overviewH > 0 && px < size.width; px++) {
       final t0 = (px / size.width) * duration;
       final t1 = ((px + 1) / size.width) * duration;
       final amp = _peakInRange(t0, t1, n, duration, peak);
@@ -90,32 +115,34 @@ class WaveformPainter extends CustomPainter {
       final y0 = (overviewH - h) / 2;
       canvas.drawRect(
         Rect.fromLTWH(px, y0, 1.2, h.clamp(1, overviewH)),
-        Paint()..color = _ampColor(color, amp).withValues(alpha: 0.95),
+        Paint()..color = _pixelColor(t0, t1, amp).withValues(alpha: 0.95),
       );
     }
-    final winL = (viewStart / duration) * size.width;
-    final winR = (viewEnd / duration) * size.width;
-    canvas.drawRect(
-      Rect.fromLTRB(winL.clamp(0, size.width), 0, winR.clamp(0, size.width), overviewH),
-      Paint()..color = Colors.white.withValues(alpha: 0.12),
-    );
-    _drawPlayhead(
-      canvas,
-      x: (position / duration) * size.width,
-      y0: 0,
-      y1: overviewH,
-      coreWidth: 2.4,
-      tick: true,
-    );
-    _drawLoopOverview(canvas, size, overviewH);
-    _drawCueMarkers(
-      canvas,
-      size,
-      xForTime: (t) => (t / duration) * size.width,
-      y0: 0,
-      y1: overviewH,
-      flag: false,
-    );
+    if (overviewH > 0) {
+      final winL = (viewStart / duration) * size.width;
+      final winR = (viewEnd / duration) * size.width;
+      canvas.drawRect(
+        Rect.fromLTRB(winL.clamp(0, size.width), 0, winR.clamp(0, size.width), overviewH),
+        Paint()..color = Colors.white.withValues(alpha: 0.12),
+      );
+      _drawPlayhead(
+        canvas,
+        x: (position / duration) * size.width,
+        y0: 0,
+        y1: overviewH,
+        coreWidth: 2.4,
+        tick: true,
+      );
+      _drawLoopOverview(canvas, size, overviewH);
+      _drawCueMarkers(
+        canvas,
+        size,
+        xForTime: (t) => (t / duration) * size.width,
+        y0: 0,
+        y1: overviewH,
+        flag: false,
+      );
+    }
 
     for (var px = 0.0; px < size.width; px++) {
       final t0 = viewStart + (px / size.width) * viewDur;
@@ -126,6 +153,31 @@ class WaveformPainter extends CustomPainter {
       final yHi = mid - (loHi.$2.abs() / peak) * (waveH * 0.48);
       final yLo = mid + (loHi.$1.abs() / peak) * (waveH * 0.48);
       final h = (yLo - yHi).clamp(1.0, waveH);
+      if (_hasBands) {
+        final b = _bandsAt(t0.clamp(0.0, duration), t1.clamp(0.0, duration));
+        final total = b.$1 + b.$2 + b.$3;
+        if (total > 1e-4) {
+          // Outer: bass (red) full height, then mids, then highs in the core,
+          // the way Serato stacks its three-band wave.
+          final half = h / 2;
+          final yMid = yHi + half;
+          final fLow = (b.$1 / total).clamp(0.0, 1.0);
+          final fMid = (b.$2 / total).clamp(0.0, 1.0);
+          final fHigh = (b.$3 / total).clamp(0.0, 1.0);
+          void bar(double frac, Color c) {
+            final hh = (half * frac.clamp(0.08, 1.0));
+            canvas.drawRect(
+              Rect.fromLTWH(px, yMid - hh, 1.05, hh * 2),
+              Paint()..color = c,
+            );
+          }
+          final mix = _pixelColor(t0, t1, amp);
+          bar(1.0, Color.lerp(bandLow, mix, 0.35)!.withValues(alpha: 0.55 + 0.45 * fLow));
+          bar(0.66 + 0.34 * fMid, Color.lerp(bandMid, mix, 0.25)!.withValues(alpha: 0.5 + 0.5 * fMid));
+          bar(0.33 + 0.4 * fHigh, Color.lerp(bandHigh, Colors.white, 0.25 * fHigh)!.withValues(alpha: 0.6 + 0.4 * fHigh));
+          continue;
+        }
+      }
       canvas.drawRect(
         Rect.fromLTWH(px, yHi, 1.05, h),
         Paint()..color = _ampColor(color, amp),
@@ -391,6 +443,34 @@ class WaveformPainter extends CustomPainter {
     return math.max(mm.$1.abs(), mm.$2.abs()) / peak;
   }
 
+  /// Average low/mid/high energy over a time range.
+  (double, double, double) _bandsAt(double t0, double t1) {
+    final n = low!.length;
+    var i0 = ((t0 / duration) * n).floor().clamp(0, n - 1);
+    var i1 = ((t1 / duration) * n).ceil().clamp(0, n - 1);
+    if (i1 < i0) i1 = i0;
+    var l = 0.0, m = 0.0, h = 0.0;
+    for (var i = i0; i <= i1; i++) {
+      l = math.max(l, low![i]);
+      m = math.max(m, mid![i]);
+      h = math.max(h, high![i]);
+    }
+    return (l, m, h);
+  }
+
+  /// Blend of the three band colours weighted by energy, brightness by [amp].
+  Color _pixelColor(double t0, double t1, double amp) {
+    if (!_hasBands) return _ampColor(color, amp);
+    final b = _bandsAt(t0.clamp(0.0, duration), t1.clamp(0.0, duration));
+    final total = b.$1 + b.$2 + b.$3;
+    if (total < 1e-4) return _ampColor(color, amp);
+    final r = (bandLow.r * b.$1 + bandMid.r * b.$2 + bandHigh.r * b.$3) / total;
+    final g = (bandLow.g * b.$1 + bandMid.g * b.$2 + bandHigh.g * b.$3) / total;
+    final bl = (bandLow.b * b.$1 + bandMid.b * b.$2 + bandHigh.b * b.$3) / total;
+    final v = 0.55 + 0.45 * amp.clamp(0.0, 1.0);
+    return Color.from(alpha: 1, red: (r * v).clamp(0, 1), green: (g * v).clamp(0, 1), blue: (bl * v).clamp(0, 1));
+  }
+
   Color _ampColor(Color base, double amp) {
     final a = amp.clamp(0.0, 1.0);
     if (a < 0.25) {
@@ -408,6 +488,8 @@ class WaveformPainter extends CustomPainter {
   @override
   bool shouldRepaint(covariant WaveformPainter oldDelegate) {
     return oldDelegate.position != position ||
+        oldDelegate.overviewHeight != overviewHeight ||
+        oldDelegate.zoomWindowSec != zoomWindowSec ||
         oldDelegate.duration != duration ||
         oldDelegate.min != min ||
         oldDelegate.max != max ||
@@ -419,6 +501,7 @@ class WaveformPainter extends CustomPainter {
         oldDelegate.loopEnd != loopEnd ||
         oldDelegate.cuePoint != cuePoint ||
         !listEquals(oldDelegate.hotcues, hotcues) ||
+        oldDelegate.low != low ||
         oldDelegate.showJumpZone != showJumpZone;
   }
 }
@@ -441,10 +524,21 @@ class WaveformView extends StatelessWidget {
     this.onOverviewSeek,
     this.cuePoint = 0,
     this.hotcues = const [],
+    this.low,
+    this.mid,
+    this.high,
+    this.zoom = 8.0,
+    this.showOverview = true,
   });
 
   final double cuePoint;
   final List<double> hotcues;
+  final Float32List? low;
+  final Float32List? mid;
+  final Float32List? high;
+  /// Seconds of audio visible in the scrolling wave.
+  final double zoom;
+  final bool showOverview;
 
   final Float32List min;
   final Float32List max;
@@ -461,8 +555,6 @@ class WaveformView extends StatelessWidget {
   final ValueChanged<double>? onSeek;
   /// Full-track overview strip tap → absolute position in seconds.
   final ValueChanged<double>? onOverviewSeek;
-
-  static const zoom = 8.0;
 
   @override
   Widget build(BuildContext context) {
@@ -489,6 +581,10 @@ class WaveformView extends StatelessWidget {
             showJumpZone: onSeek != null,
             cuePoint: cuePoint,
             hotcues: hotcues,
+            low: low,
+            mid: mid,
+            high: high,
+            overviewHeight: showOverview ? WaveformPainter.overviewH : 0,
           ),
           size: Size(w, h),
         );
@@ -498,7 +594,7 @@ class WaveformView extends StatelessWidget {
         return GestureDetector(
           onTapDown: (d) {
             final nx = (d.localPosition.dx / w).clamp(0.0, 1.0);
-            if (d.localPosition.dy < WaveformPainter.overviewH) {
+            if (showOverview && d.localPosition.dy < WaveformPainter.overviewH) {
               onOverviewSeek?.call(nx * duration);
               return;
             }

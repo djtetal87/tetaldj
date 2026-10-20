@@ -45,6 +45,15 @@ typedef _WaveCopyC = Int32 Function(
   Pointer<Float>,
   Int32,
 );
+typedef _WaveBandsCopyC =
+    Int32 Function(
+      Pointer<Void>,
+      Int32,
+      Pointer<Float>,
+      Pointer<Float>,
+      Pointer<Float>,
+      Int32,
+    );
 
 class NativeEngine {
   NativeEngine._(this._lib, this._handle);
@@ -186,6 +195,18 @@ class NativeEngine {
           int,
         )
       >('dj_waveform_copy');
+  late final _waveBandsCopy = _lib
+      .lookupFunction<
+        _WaveBandsCopyC,
+        int Function(
+          Pointer<Void>,
+          int,
+          Pointer<Float>,
+          Pointer<Float>,
+          Pointer<Float>,
+          int,
+        )
+      >('dj_waveform_bands_copy');
 
   static NativeEngine open() {
     final lib = Platform.isAndroid
@@ -305,6 +326,26 @@ class NativeEngine {
     } finally {
       malloc.free(minPtr);
       malloc.free(maxPtr);
+    }
+  }
+
+  /// Per-bin low / mid / high energy (0..1) for the three-colour waveform.
+  ({Float32List low, Float32List mid, Float32List high}) waveformBands(int deck) {
+    final bins = _waveBins();
+    final lowPtr = malloc<Float>(bins);
+    final midPtr = malloc<Float>(bins);
+    final highPtr = malloc<Float>(bins);
+    try {
+      final n = _waveBandsCopy(_handle, deck, lowPtr, midPtr, highPtr, bins);
+      return (
+        low: Float32List.fromList(lowPtr.asTypedList(n)),
+        mid: Float32List.fromList(midPtr.asTypedList(n)),
+        high: Float32List.fromList(highPtr.asTypedList(n)),
+      );
+    } finally {
+      malloc.free(lowPtr);
+      malloc.free(midPtr);
+      malloc.free(highPtr);
     }
   }
 }

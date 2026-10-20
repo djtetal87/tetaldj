@@ -10,7 +10,7 @@ class HotCueStore {
   HotCueStore._();
   static final instance = HotCueStore._();
 
-  static const slots = 4;
+  static const slots = 8;
   Database? _db;
 
   Future<Database> _open() async {
