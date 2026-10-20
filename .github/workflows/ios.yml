@@ -39,6 +39,7 @@ jobs:
           set -euo pipefail
           cmake -S native -B build/native-ios -G "Unix Makefiles" \
             -DCMAKE_BUILD_TYPE=Release \
+            -DCMAKE_POLICY_VERSION_MINIMUM=3.5 \
             -DCMAKE_SYSTEM_NAME=iOS \
             -DCMAKE_OSX_SYSROOT=iphoneos \
             -DCMAKE_OSX_ARCHITECTURES=arm64 \
