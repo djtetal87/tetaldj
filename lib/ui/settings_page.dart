@@ -242,6 +242,28 @@ class _SettingsPageState extends State<SettingsPage> {
               value: midi.vinylMode,
               onChanged: midi.setVinylMode,
             ),
+            Row(
+              children: [
+                const SizedBox(
+                  width: 150,
+                  child: Text('Sensibilidad del scratch', style: TextStyle(fontSize: 13)),
+                ),
+                Expanded(
+                  child: Slider(
+                    value: midi.scratchSensitivity,
+                    min: 0.25,
+                    max: 4,
+                    divisions: 15,
+                    label: '${midi.scratchSensitivity.toStringAsFixed(2)}x',
+                    onChanged: (v) => setState(() => midi.scratchSensitivity = v),
+                  ),
+                ),
+                SizedBox(
+                  width: 44,
+                  child: Text('${midi.scratchSensitivity.toStringAsFixed(2)}x', style: const TextStyle(fontSize: 12)),
+                ),
+              ],
+            ),
             SwitchListTile(
               contentPadding: EdgeInsets.zero,
               dense: true,

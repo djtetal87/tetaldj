@@ -301,7 +301,7 @@ class MidiController extends ChangeNotifier {
             dj.platterTouch(deck);
           } else if (!on && _touching[deck]) {
             _touching[deck] = false;
-            _still[deck]?.cancel();
+            _stopTicks(deck);
             dj.platterRelease(deck);
           }
         }
@@ -321,24 +321,40 @@ class MidiController extends ChangeNotifier {
     return ((f - 0.5) / 0.5) * 6;
   }
 
+  /// Scratch sensitivity multiplier (1 = one jog turn is 1.8 s of audio).
+  double scratchSensitivity = 1.0;
+  final List<int> _tickAccum = [0, 0];
+  final List<Timer?> _tickTimer = [null, null];
+  final List<int> _quiet = [0, 0];
+
   void _jog(int deck, int delta, MidiMapping m, int timestamp, {required bool ring}) {
     if (delta == 0) return;
     if (!ring && _vinyl[deck] && _touching[deck]) {
-      // Scratch: ticks per revolution -> seconds of audio at 33 rpm.
-      final nowUs = timestamp > 0 ? timestamp : DateTime.now().microsecondsSinceEpoch;
-      final last = _lastTickUs[deck];
-      _lastTickUs[deck] = nowUs;
-      final dt = last == 0 ? 0.016 : ((nowUs - last) / 1e6).clamp(0.002, 0.25);
-      final seconds = delta / m.jogTicksPerRev * 1.8;
-      dj.platterScratch(deck, seconds / dt);
-      _still[deck]?.cancel();
-      _still[deck] = Timer(const Duration(milliseconds: 45), () {
-        if (_touching[deck]) dj.platterScratch(deck, 0);
+      // USB MIDI carries no timestamps, so measure the platter speed as
+      // ticks per 20 ms window instead of per message.
+      _tickAccum[deck] += delta;
+      _tickTimer[deck] ??= Timer.periodic(const Duration(milliseconds: 20), (_) {
+        final ticks = _tickAccum[deck];
+        _tickAccum[deck] = 0;
+        if (ticks == 0) {
+          if (++_quiet[deck] >= 2) dj.platterScratch(deck, 0);
+          return;
+        }
+        _quiet[deck] = 0;
+        final seconds = ticks / m.jogTicksPerRev * 1.8 * scratchSensitivity;
+        dj.platterScratch(deck, seconds / 0.02);
       });
       return;
     }
     // Ring / non-vinyl: pitch bend proportional to how fast the wheel moves.
     dj.jogBend(deck, (delta / 5.0).clamp(-1.0, 1.0));
+  }
+
+  void _stopTicks(int deck) {
+    _tickTimer[deck]?.cancel();
+    _tickTimer[deck] = null;
+    _tickAccum[deck] = 0;
+    _quiet[deck] = 0;
   }
 
   void _browse(int delta) {
@@ -423,6 +439,9 @@ class MidiController extends ChangeNotifier {
     _sub?.cancel();
     _setupSub?.cancel();
     for (final t in _still) {
+      t?.cancel();
+    }
+    for (final t in _tickTimer) {
       t?.cancel();
     }
     super.dispose();
