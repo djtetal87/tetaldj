@@ -1,0 +1,12 @@
+name: flutter_midi_command_windows
+description: >-
+  Stand-in for flutter_midi_command_windows so pub resolves without win32 6
+  (which clashes with file_picker 8.1.4). TetalDJ does not ship on Windows.
+version: 1.4.0
+publish_to: none
+environment:
+  sdk: ^3.5.0
+  flutter: ">=3.24.0"
+dependencies:
+  flutter:
+    sdk: flutter

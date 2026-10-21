@@ -20,7 +20,14 @@ dependencies:
   file_picker: 8.1.4
   tetaldj_engine:
     path: packages/tetaldj_engine
-  flutter_midi_command: ^1.0.2
+  flutter_midi_command: ^1.4.0
+
+# The Windows implementation of flutter_midi_command needs win32 6 while
+# file_picker 8.1.4 needs win32 5; we never ship Windows, so a stub stands in.
+dependency_overrides:
+  flutter_midi_command_windows:
+    path: packages/flutter_midi_command_windows_stub
+
 dev_dependencies:
   flutter_test:
     sdk: flutter

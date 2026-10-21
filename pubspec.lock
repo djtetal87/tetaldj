@@ -122,10 +122,10 @@ packages:
     dependency: "direct main"
     description:
       name: flutter_midi_command
-      sha256: "3bca948b6a36aca3233ae4899a77cc31b344638fa36d589669c22fd0e46df57d"
+      sha256: "8e614fe2eafc1288f4e99e9eb34e36dfee1f363de919cf1b6434db44f0c44d5e"
       url: "https://pub.dev"
     source: hosted
-    version: "1.0.2"
+    version: "1.4.0"
   flutter_midi_command_android:
     dependency: transitive
     description:
@@ -167,13 +167,12 @@ packages:
     source: hosted
     version: "1.4.0"
   flutter_midi_command_windows:
-    dependency: transitive
+    dependency: "direct overridden"
     description:
-      name: flutter_midi_command_windows
-      sha256: "8ce07e6bfdda5071f4dfd14d01e9c4fe9ade0eaf9b5f10e46298023999ac7e80"
-      url: "https://pub.dev"
-    source: hosted
-    version: "1.0.1"
+      path: "packages/flutter_midi_command_windows_stub"
+      relative: true
+    source: path
+    version: "1.4.0"
   flutter_plugin_android_lifecycle:
     dependency: transitive
     description:
