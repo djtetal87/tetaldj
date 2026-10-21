@@ -20,6 +20,9 @@ Pod::Spec.new do |s|
   s.libraries        = 'c++'
   s.frameworks       = 'CoreAudio', 'AudioToolbox', 'AVFoundation', 'CoreFoundation'
   s.platform         = :ios, '15.0'
+  # onnxruntime-c ships a static xcframework; a dynamic pod may not depend
+  # on it transitively, so this plugin is a static framework too.
+  s.static_framework = true
   s.dependency 'Flutter'
   # Stems model inference (dj_stems_separate) links against ONNX Runtime.
   s.dependency 'onnxruntime-c', '1.20.0'
