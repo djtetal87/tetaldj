@@ -513,6 +513,10 @@ struct Engine {
   std::atomic<int> outputMode{0}; // 0 internal 2ch, 1 external 4ch
   std::atomic<int> engineSampleRate{48000};
   std::atomic<int> engineChannels{2};
+  std::atomic<bool> wantFourChannels{true};
+  std::atomic<bool> pfl[2] = {{false}, {false}};
+  std::atomic<float> cueMix{0.0f};   // 0 = cue only, 1 = master only
+  std::atomic<float> cueGain{1.0f};
   std::atomic<bool> alive{true};
   std::atomic<bool> reconnecting{false};
   std::atomic<bool> managingStream{false};
@@ -701,7 +705,10 @@ struct Engine {
 
     ma_device_config cfg = ma_device_config_init(ma_device_type_playback);
     cfg.playback.format = ma_format_f32;
-    cfg.playback.channels = 2;
+    // Ask for four channels first: a DJ controller's sound card gives master
+    // on 1-2 and the headphone cue on 3-4. Phones and plain headphones only
+    // have two, so fall back.
+    cfg.playback.channels = wantFourChannels.load() ? 4 : 2;
     cfg.sampleRate = 48000;
     cfg.periodSizeInFrames = 256;
     cfg.dataCallback = &Engine::maCallback;
@@ -709,8 +716,16 @@ struct Engine {
     cfg.performanceProfile = ma_performance_profile_low_latency;
 
     if (ma_device_init(nullptr, &cfg, &device) != MA_SUCCESS) {
-      LOGE("openStream failed (miniaudio init)");
-      return false;
+      if (cfg.playback.channels == 4) {
+        cfg.playback.channels = 2;
+        if (ma_device_init(nullptr, &cfg, &device) != MA_SUCCESS) {
+          LOGE("openStream failed (miniaudio init)");
+          return false;
+        }
+      } else {
+        LOGE("openStream failed (miniaudio init)");
+        return false;
+      }
     }
     deviceInit = true;
 
@@ -984,13 +999,32 @@ struct Engine {
         }
       }
     } else {
+      // Headphone cue on channels 3-4 (controller sound cards): the PFL'd
+      // decks pre-fader, blended with the master by cueMix.
+      const bool cueBus = channels >= 4;
+      const float cm = cueMix.load();
+      const float cg = cueGain.load();
+      const float pa = pfl[0].load() ? 1.0f : 0.0f;
+      const float pb = pfl[1].load() ? 1.0f : 0.0f;
+      const float fa = std::max(0.0001f, decks[0].fader);
+      const float fb = std::max(0.0001f, decks[1].fader);
       for (int i = 0; i < n; ++i) {
         const float l = (mixAL[i] * gainA + mixBL[i] * gainB) * m;
         const float r = (mixAR[i] * gainA + mixBR[i] * gainB) * m;
         out[i * channels + 0] = std::max(-1.0f, std::min(1.0f, l));
         out[i * channels + 1] = std::max(-1.0f, std::min(1.0f, r));
-        for (int c = 2; c < channels; ++c) {
-          out[i * channels + c] = 0.0f;
+        if (cueBus) {
+          // Deck buffers are post-fader; divide the fader back out so the cue
+          // is heard even with the channel fader down.
+          const float cl = (mixAL[i] / fa) * pa + (mixBL[i] / fb) * pb;
+          const float cr = (mixAR[i] / fa) * pa + (mixBR[i] / fb) * pb;
+          const float hl = (cl * (1.0f - cm) + l * cm) * cg;
+          const float hr = (cr * (1.0f - cm) + r * cm) * cg;
+          out[i * channels + 2] = std::max(-1.0f, std::min(1.0f, hl));
+          out[i * channels + 3] = std::max(-1.0f, std::min(1.0f, hr));
+          for (int c = 4; c < channels; ++c) out[i * channels + c] = 0.0f;
+        } else {
+          for (int c = 2; c < channels; ++c) out[i * channels + c] = 0.0f;
         }
       }
     }
@@ -1753,6 +1787,17 @@ int dj_stems_attached(DjEngine engine, int deck) {
 void dj_set_stem_gain(DjEngine engine, int deck, int stem, float gain) {
   if (deck < 0 || deck > 1 || stem < 0 || stem > 3) return;
   asEngine(engine)->decks[deck].stemGain[stem].store(std::max(0.0f, std::min(1.5f, gain)));
+}
+
+void dj_set_pfl(DjEngine engine, int deck, int on) {
+  if (deck < 0 || deck > 1) return;
+  asEngine(engine)->pfl[deck].store(on != 0);
+}
+
+void dj_set_cue_mix(DjEngine engine, float mix, float gain) {
+  Engine* e = asEngine(engine);
+  e->cueMix.store(std::max(0.0f, std::min(1.0f, mix)));
+  e->cueGain.store(std::max(0.0f, std::min(1.5f, gain)));
 }
 
 } // extern "C"

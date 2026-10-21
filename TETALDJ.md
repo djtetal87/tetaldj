@@ -158,3 +158,20 @@ que no se puede probar fuera de macOS: el log queda en el summary del run.
 - El separador avanza de a medio bloque (256 frames) y promedia las
   máscaras del solape: sin costuras cada 12 s y menos ruido musical.
   Cuesta ~2x de cómputo; ONNX Runtime con 4 hilos.
+
+### v0.5 — controladora MIDI (DDJ-SR) y cue de audífonos (2026-10-20)
+- `lib/midi/`: `MidiMapping` carga `assets/midi/*.json` (mensajes → acciones
+  por deck, pads y globales); `MidiController` usa flutter_midi_command
+  (Core MIDI en iOS), conecta sola la controladora que coincida con un mapeo,
+  decodifica y manda LEDs (play, cue, sync, keylock, loop, PFL, hot cues,
+  modo de pads). Jog: vinilo = scratch del motor con ticks/rev y timestamps;
+  anillo o sin vinilo = pitch bend proporcional (`DjController.jogBend`).
+- `assets/midi/pioneer-ddj-sr.json`: mapeo de la familia Pioneer S (SR/SX/SZ)
+  derivado de la implementación MIDI de Pioneer y del mapeo DDJ-SX de Mixxx
+  (GPL): transporte, loop, keylock, vinilo, tempo 14 bits, EQ/gain/fader,
+  filtros y crossfader (canal 7), browse/load, pads (hot cue, clear, roll =
+  auto loop, slicer = beat jump, sampler = stems).
+- Motor: salida de 4 canales cuando la tarjeta lo permite (miniaudio pide 4
+  y cae a 2); canales 3-4 = cue de audífonos: decks con PFL pre-fader
+  mezclados con el master (`dj_set_pfl`, `dj_set_cue_mix`). Botón de
+  audífonos por canal en la hoja del mixer; "reconectar audio" en Ajustes.

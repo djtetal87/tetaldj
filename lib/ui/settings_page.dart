@@ -1,14 +1,17 @@
 import 'package:flutter/material.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:sidedeck/engine/usb_output.dart';
+import 'package:flutter_midi_command/flutter_midi_command.dart' show MidiDevice;
+import 'package:sidedeck/midi/midi_controller.dart';
 import 'package:sidedeck/state/dj_controller.dart';
 import 'package:sidedeck/subsonic/subsonic_client.dart';
 import 'package:sidedeck/theme/sidedeck_theme.dart';
 
 class SettingsPage extends StatefulWidget {
-  const SettingsPage({super.key, required this.dj});
+  const SettingsPage({super.key, required this.dj, this.midi});
 
   final DjController dj;
+  final MidiController? midi;
 
   @override
   State<SettingsPage> createState() => _SettingsPageState();
@@ -75,6 +78,7 @@ class _SettingsPageState extends State<SettingsPage> {
       body: ListView(
         padding: const EdgeInsets.all(16),
         children: [
+          if (widget.midi != null) ...[_midiSection(widget.midi!), const SizedBox(height: 24)],
           const Text(
             'External mixer',
             style: TextStyle(fontWeight: FontWeight.bold, fontSize: 16),
@@ -187,6 +191,73 @@ class _SettingsPageState extends State<SettingsPage> {
           ),
         ],
       ),
+    );
+  }
+
+  Widget _midiSection(MidiController midi) {
+    return AnimatedBuilder(
+      animation: midi,
+      builder: (context, _) {
+        final ch = widget.dj.outputChannels;
+        return Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            const Text(
+              'Controladora MIDI',
+              style: TextStyle(fontWeight: FontWeight.bold, fontSize: 16),
+            ),
+            const SizedBox(height: 8),
+            Text(midi.status, style: const TextStyle(fontSize: 13)),
+            if (midi.lastMessage.isNotEmpty)
+              Text(
+                'Último: ${midi.lastMessage}',
+                style: const TextStyle(color: SideDeckTheme.muted, fontSize: 11),
+              ),
+            const SizedBox(height: 8),
+            if (midi.devices.isEmpty)
+              const Text(
+                'No se ve ninguna controladora. Conéctala por USB (adaptador con '
+                'carga) y toca Buscar.',
+                style: TextStyle(color: SideDeckTheme.muted, fontSize: 12, height: 1.4),
+              ),
+            for (final MidiDevice d in midi.devices)
+              ListTile(
+                contentPadding: EdgeInsets.zero,
+                dense: true,
+                title: Text(d.name),
+                subtitle: Text(d.type.toString().split('.').last),
+                trailing: midi.connected?.id == d.id
+                    ? TextButton(onPressed: midi.disconnect, child: const Text('Desconectar'))
+                    : FilledButton(onPressed: () => midi.connect(d), child: const Text('Conectar')),
+              ),
+            Row(
+              children: [
+                OutlinedButton.icon(
+                  onPressed: midi.refresh,
+                  icon: const Icon(Icons.refresh, size: 16),
+                  label: const Text('Buscar'),
+                ),
+                const SizedBox(width: 12),
+                OutlinedButton.icon(
+                  onPressed: () {
+                    widget.dj.restartAudio();
+                    setState(() {});
+                  },
+                  icon: const Icon(Icons.headphones, size: 16),
+                  label: Text('Audio: $ch canales · reconectar'),
+                ),
+              ],
+            ),
+            const SizedBox(height: 4),
+            const Text(
+              'Con 4 canales (tarjeta de la controladora) el master sale por 1-2 y el '
+              'cue de audífonos por 3-4. Si conectaste la controladora con la app '
+              'abierta, toca reconectar.',
+              style: TextStyle(color: SideDeckTheme.muted, fontSize: 12, height: 1.4),
+            ),
+          ],
+        );
+      },
     );
   }
 }

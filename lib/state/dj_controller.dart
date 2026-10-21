@@ -540,7 +540,7 @@ class DjController extends ChangeNotifier {
   Future<String> _stemsDirFor(String path) async {
     final root = await _stemsRoot();
     final stat = await File(path).stat();
-    final key = sha1.convert('$path|${stat.size}'.codeUnits).toString();
+    final key = sha1.convert('$path|${stat.size}|v2'.codeUnits).toString();
     return p.join(root.path, key);
   }
 
@@ -769,6 +769,63 @@ class DjController extends ChangeNotifier {
     });
   }
 
+  /// Proportional pitch bend from a jog wheel ring / platter when not in
+  /// vinyl mode: [amount] in -1..1 of ±8 %; decays to 0 if no new tick.
+  Timer? _jogBendTimer;
+
+  void jogBend(int deckIndex, double amount) {
+    final d = deck(deckIndex);
+    if (!d.loaded) return;
+    if (!d.playing) {
+      _jogPaused(deckIndex, faster: amount > 0);
+      return;
+    }
+    _nudgeBend[deckIndex] = (amount * 0.08).clamp(-0.16, 0.16);
+    _applyRate(deckIndex);
+    _jogBendTimer?.cancel();
+    _jogBendTimer = Timer(const Duration(milliseconds: 90), () {
+      _nudgeBend[deckIndex] = 0;
+      _applyRate(deckIndex);
+    });
+  }
+
+  /// Monitor (headphone cue) selection per deck; honoured on 4-channel outputs.
+  final List<bool> pfl = [false, false];
+  double cueMix = 0; // 0 = cue only, 1 = master only
+  double cueGain = 1;
+
+  int get outputChannels => _engine.outputChannels;
+
+  /// Reopen the audio output (e.g. after plugging a controller) and re-apply
+  /// the cue settings.
+  bool restartAudio() {
+    final ok = _engine.restartAudio();
+    _engine.setCueMix(cueMix, cueGain);
+    for (var i = 0; i < 2; i++) {
+      _engine.setPfl(i, pfl[i]);
+    }
+    notifyListeners();
+    return ok;
+  }
+
+  void setPfl(int deckIndex, bool on) {
+    pfl[deckIndex] = on;
+    _engine.setPfl(deckIndex, on);
+    notifyListeners();
+  }
+
+  void setCueMix(double v) {
+    cueMix = v.clamp(0.0, 1.0);
+    _engine.setCueMix(cueMix, cueGain);
+    notifyListeners();
+  }
+
+  void setCueGain(double v) {
+    cueGain = v.clamp(0.0, 1.5);
+    _engine.setCueMix(cueMix, cueGain);
+    notifyListeners();
+  }
+
   void endNudge(int deckIndex) {
     _nudgeHold[deckIndex]?.cancel();
     _nudgeHold[deckIndex] = null;
@@ -955,6 +1012,7 @@ class DjController extends ChangeNotifier {
 
   @override
   void dispose() {
+    _jogBendTimer?.cancel();
     _stemsPoll?.cancel();
     if (recordingPath != null) _engine.recordStop();
     _usbSub?.cancel();

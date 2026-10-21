@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:sidedeck/engine/music_utils.dart';
 import 'package:sidedeck/engine/usb_output.dart';
+import 'package:sidedeck/midi/midi_controller.dart';
 import 'package:sidedeck/state/dj_controller.dart';
 import 'package:sidedeck/state/library_controller.dart';
 import 'package:sidedeck/theme/sidedeck_theme.dart';
@@ -25,6 +26,7 @@ class HomePage extends StatefulWidget {
 class _HomePageState extends State<HomePage> {
   late final DjController _dj;
   late final LibraryController _library;
+  late final MidiController _midi;
   int? _gridEditDeck;
   final _padMode = [PadMode.hotcue, PadMode.hotcue];
   final _padPage = [0, 0];
@@ -45,12 +47,14 @@ class _HomePageState extends State<HomePage> {
     SystemChrome.setEnabledSystemUIMode(SystemUiMode.immersiveSticky);
     _dj = widget.dj ?? DjController();
     _library = widget.library ?? LibraryController();
+    _midi = MidiController(_dj, _library);
     _dj.addListener(_onDjChanged);
   }
 
   @override
   void dispose() {
     _dj.removeListener(_onDjChanged);
+    _midi.dispose();
     _dj.dispose();
     _library.dispose();
     SystemChrome.setPreferredOrientations(DeviceOrientation.values);
@@ -122,7 +126,7 @@ class _HomePageState extends State<HomePage> {
   Future<void> _openSettings() async {
     await Navigator.of(
       context,
-    ).push(MaterialPageRoute(builder: (_) => SettingsPage(dj: _dj)));
+    ).push(MaterialPageRoute(builder: (_) => SettingsPage(dj: _dj, midi: _midi)));
   }
 
   Future<void> _openLibrary() async {

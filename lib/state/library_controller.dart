@@ -48,6 +48,14 @@ class LibraryController extends ChangeNotifier {
 
   final AnalysisCache _cache = AnalysisCache.instance;
   final List<LibraryTrack> tracks = [];
+
+  /// Row a hardware browse knob is pointing at (index into [filtered]).
+  int highlighted = -1;
+
+  void highlight(int index) {
+    highlighted = index;
+    notifyListeners();
+  }
   String query = '';
   TrackSort sort = TrackSort.name;
   bool loading = false;

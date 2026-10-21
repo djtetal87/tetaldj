@@ -31,7 +31,9 @@ class MixerStrip extends StatelessWidget {
       children: [
         SizedBox(width: 104, child: _eqBlock(0, a, SideDeckTheme.accentA)),
         _channelFader(0, a, SideDeckTheme.accentA),
+        _pflButton(0, SideDeckTheme.accentA),
         Expanded(child: _center()),
+        _pflButton(1, SideDeckTheme.accentB),
         _channelFader(1, b, SideDeckTheme.accentB),
         SizedBox(width: 104, child: _eqBlock(1, b, SideDeckTheme.accentB)),
       ],
@@ -130,6 +132,28 @@ class MixerStrip extends StatelessWidget {
             border: Border.all(color: SideDeckTheme.stroke),
           ),
           child: Icon(icon, size: 18, color: SideDeckTheme.text),
+        ),
+      ),
+    );
+  }
+
+  /// Headphone cue; only audible on a 4-channel output (controller card).
+  Widget _pflButton(int deck, Color accent) {
+    final on = controller.pfl[deck];
+    return Padding(
+      padding: const EdgeInsets.symmetric(horizontal: 4),
+      child: GestureDetector(
+        onTap: () => controller.setPfl(deck, !on),
+        child: Container(
+          width: 30,
+          height: 30,
+          alignment: Alignment.center,
+          decoration: BoxDecoration(
+            color: on ? accent : SideDeckTheme.panelAlt,
+            borderRadius: BorderRadius.circular(15),
+            border: Border.all(color: on ? accent : SideDeckTheme.stroke),
+          ),
+          child: Icon(Icons.headphones, size: 16, color: on ? Colors.black : SideDeckTheme.muted),
         ),
       ),
     );

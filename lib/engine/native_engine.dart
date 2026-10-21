@@ -46,6 +46,7 @@ typedef _IntVoidC = Int32 Function();
 typedef _VoidVoidC = Void Function();
 typedef _StemsAttachC = Int32 Function(Pointer<Void>, Int32, Pointer<Utf8>);
 typedef _SetStemGainC = Void Function(Pointer<Void>, Int32, Int32, Float);
+typedef _SetCueMixC = Void Function(Pointer<Void>, Float, Float);
 typedef _SetFxC = Void Function(Pointer<Void>, Int32, Int32, Float, Float);
 typedef _WaveCopyC = Int32 Function(
   Pointer<Void>,
@@ -230,6 +231,10 @@ class NativeEngine {
       .lookupFunction<_SetStemGainC, void Function(Pointer<Void>, int, int, double)>(
         'dj_set_stem_gain',
       );
+  late final _setPfl = _lib
+      .lookupFunction<_BeatJumpC, void Function(Pointer<Void>, int, int)>('dj_set_pfl');
+  late final _setCueMix = _lib
+      .lookupFunction<_SetCueMixC, void Function(Pointer<Void>, double, double)>('dj_set_cue_mix');
   late final _setFx = _lib
       .lookupFunction<_SetFxC, void Function(Pointer<Void>, int, int, double, double)>(
         'dj_set_fx',
@@ -352,6 +357,16 @@ class NativeEngine {
   bool stemsAttached(int deck) => _stemsAttached(_handle, deck) != 0;
   void setStemGain(int deck, int stem, double gain) =>
       _setStemGain(_handle, deck, stem, gain);
+
+  /// Headphone cue (channels 3-4 on a 4-channel output).
+  void setPfl(int deck, bool on) => _setPfl(_handle, deck, on ? 1 : 0);
+  void setCueMix(double mix, double gain) => _setCueMix(_handle, mix, gain);
+  /// Close and reopen the output (after plugging / unplugging a sound card)
+  /// so the channel count is re-detected. Returns whether it restarted.
+  bool restartAudio() {
+    _stop(_handle);
+    return _start(_handle) != 0;
+  }
 
   /// Insert effect: type 0 none, 1 echo, 2 reverb, 3 flanger, 4 phaser,
   /// 5 crush, 6 gate; amount 0..1; beats for the tempo-synced ones.

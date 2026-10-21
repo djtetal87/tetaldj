@@ -107,6 +107,11 @@ void dj_stems_detach(DjEngine engine, int deck);
 int dj_stems_attached(DjEngine engine, int deck);
 void dj_set_stem_gain(DjEngine engine, int deck, int stem, float gain);
 
+/// Headphone cue: when the output has 4+ channels (controller sound card),
+/// channels 3-4 carry the PFL'd decks blended with the master by mix.
+void dj_set_pfl(DjEngine engine, int deck, int on);
+void dj_set_cue_mix(DjEngine engine, float mix, float gain);
+
 /// Record the stereo master mix to a 16-bit WAV at [path]. Returns 1 on success.
 int dj_record_start(DjEngine engine, const char* path);
 void dj_record_stop(DjEngine engine);
