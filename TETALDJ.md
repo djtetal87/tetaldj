@@ -153,3 +153,8 @@ que no se puede probar fuera de macOS: el log queda en el summary del run.
   (mantener uno apaga el modo stems). Caché en
   `Library/Application Support/stems/<sha1(ruta|tamaño)>/`.
 - iOS: el pod `onnxruntime-c` 1.20.0 va como dependencia del plugin FFI.
+
+### v0.4.2 — stems con bloques solapados (2026-10-20)
+- El separador avanza de a medio bloque (256 frames) y promedia las
+  máscaras del solape: sin costuras cada 12 s y menos ruido musical.
+  Cuesta ~2x de cómputo; ONNX Runtime con 4 hilos.

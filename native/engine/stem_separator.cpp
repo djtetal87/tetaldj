@@ -174,7 +174,7 @@ bool separate(const std::string& inputPath, const std::string& modelPath,
     // ---- ONNX Runtime session
     Ort::Env env(ORT_LOGGING_LEVEL_WARNING, "tetaldj-stems");
     Ort::SessionOptions so;
-    so.SetIntraOpNumThreads(2);
+    so.SetIntraOpNumThreads(4);
     so.SetGraphOptimizationLevel(GraphOptimizationLevel::ORT_ENABLE_ALL);
     Ort::Session session(env, modelPath.c_str(), so);
     Ort::AllocatorWithDefaultOptions alloc;
@@ -199,7 +199,16 @@ bool separate(const std::string& inputPath, const std::string& modelPath,
     FFTReal fft(kN);
     const size_t pad = kN / 2;
     const size_t totalFrames = frames / kHop + 1;
-    const size_t numBlocks = (totalFrames + kT - 1) / kT;
+    // Blocks of kT frames advance by kS (half a block) and the masks of the
+    // overlapping half are averaged, which removes the seams every ~12 s and
+    // smooths the musical noise of a single pass.
+    constexpr int kS = kT / 2;
+    const size_t numSteps = (totalFrames + kS - 1) / kS;
+    std::vector<float> maskCur[kStems], maskCarry[kStems];
+    for (int s = 0; s < kStems; ++s) {
+      maskCur[s].assign((size_t)2 * kT * kF, 0.0f);
+      maskCarry[s].assign((size_t)2 * kS * kF, 0.0f);
+    }
 
     std::vector<double> frameIn(kN), re(kN), im(kN), outFrame(kN);
     // Per block spectra: [channel][frame][bin] complex
@@ -220,14 +229,17 @@ bool separate(const std::string& inputPath, const std::string& modelPath,
       return i < frames ? (double)pcm[i * 2 + ch] : 0.0;
     };
 
-    for (size_t b = 0; b < numBlocks; ++b) {
+    for (size_t b = 0; b < numSteps; ++b) {
       if (progress.cancel.load()) {
         progress.error = "cancelled";
         progress.state.store(-1);
         return false;
       }
-      const size_t f0 = b * kT;
+      const size_t f0 = b * kS;
       const int nFrames = (int)std::min((size_t)kT, totalFrames - f0);
+      const bool last = f0 + kS >= totalFrames;
+      // Frames synthesised this step: half a block, or everything left.
+      const int nSynth = last ? nFrames : std::min(kS, nFrames);
       // forward STFT
       for (int c = 0; c < 2; ++c) {
         for (int t = 0; t < kT; ++t) {
@@ -256,13 +268,29 @@ bool separate(const std::string& inputPath, const std::string& modelPath,
       Ort::Value input = Ort::Value::CreateTensor<float>(mem, mag.data(), mag.size(), shape, 4);
       auto outputs = session.Run(Ort::RunOptions{nullptr}, inNames, &input, 1, outNames, kStems);
       const float* masks[kStems];
-      for (int s = 0; s < kStems; ++s) masks[s] = outputs[s].GetTensorData<float>();
+      for (int s = 0; s < kStems; ++s) {
+        const float* raw = outputs[s].GetTensorData<float>();
+        std::copy(raw, raw + maskCur[s].size(), maskCur[s].begin());
+        for (int c = 0; c < 2; ++c) {
+          for (int t = 0; t < kS; ++t) {
+            float* cur = &maskCur[s][((size_t)c * kT + t) * kF];
+            float* carry = &maskCarry[s][((size_t)c * kS + t) * kF];
+            if (b > 0) {
+              for (int k = 0; k < kF; ++k) cur[k] = 0.5f * (cur[k] + carry[k]);
+            }
+            // Second half of this block becomes the carry for the next step.
+            const float* next = &maskCur[s][((size_t)c * kT + t + kS) * kF];
+            std::copy(next, next + kF, carry);
+          }
+        }
+        masks[s] = maskCur[s].data();
+      }
 
       // ratio masks (Spleeter: exponent 2), apply, inverse, overlap-add
       for (int s = 0; s < kStems; ++s) {
         for (int c = 0; c < 2; ++c) {
           float* acc = ola[s][c].data();
-          for (int t = 0; t < nFrames; ++t) {
+          for (int t = 0; t < nSynth; ++t) {
             const size_t m0 = ((size_t)c * kT + t) * kF;
             const float* sr = &specRe[((size_t)c * kT + t) * kBins];
             const float* si = &specIm[((size_t)c * kT + t) * kBins];
@@ -289,7 +317,7 @@ bool separate(const std::string& inputPath, const std::string& modelPath,
       // Samples [0, nFrames*hop) of this block are now final. Add the
       // residual (what the band-limited nets dropped) to "other" so the four
       // stems always sum back to the original.
-      const size_t finalN = (size_t)nFrames * kHop;
+      const size_t finalN = (size_t)nSynth * kHop;
       for (int c = 0; c < 2; ++c) {
         std::vector<float>& o = ola[3][c];
         for (size_t i = 0; i < finalN; ++i) {
@@ -319,7 +347,7 @@ bool separate(const std::string& inputPath, const std::string& modelPath,
           std::fill(v.end() - finalN, v.end(), 0.0f);
         }
       }
-      progress.fraction.store(0.03f + 0.96f * (float)(b + 1) / (float)numBlocks);
+      progress.fraction.store(0.03f + 0.96f * (float)(b + 1) / (float)numSteps);
     }
     // Flush the overlap tail of the last block so the file ends where the
     // track ends.
