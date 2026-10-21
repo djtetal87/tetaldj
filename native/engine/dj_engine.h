@@ -85,6 +85,10 @@ void dj_set_fx(DjEngine engine, int deck, int type, float amount, float beats);
 void dj_scratch_begin(DjEngine engine, int deck);
 void dj_scratch_rate(DjEngine engine, int deck, float rate);
 void dj_scratch_end(DjEngine engine, int deck);
+/// Stop like a turntable motor: the deck winds down over ~0.8 s.
+void dj_brake(DjEngine engine, int deck);
+/// 1 while the deck is scratching or braking (the playhead still moves).
+int dj_platter_active(DjEngine engine, int deck);
 
 /// Record the stereo master mix to a 16-bit WAV at [path]. Returns 1 on success.
 int dj_record_start(DjEngine engine, const char* path);

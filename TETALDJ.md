@@ -123,3 +123,13 @@ que no se puede probar fuera de macOS: el log queda en el summary del run.
   aplicados; al soltar re-prima el stretcher en la nueva posición.
 - Plato: velocidad angular con los timestamps del puntero (una vuelta =
   1,8 s); 70 ms sin movimiento = mano quieta = silencio.
+
+### v0.3.2 — onda sigue el scratch, freno de vinilo, colas de FX (2026-10-20)
+- `_tick` actualiza la posición también mientras el plato está activo
+  (`dj_platter_active`), así la onda y el plato giran hacia atrás al hacer
+  scratch.
+- `dj_brake`: PLAY sobre un tema sonando frena como un motor de tornamesa
+  (~0,8 s, con caída de tono) en vez de cortar; PLAY durante el freno
+  retoma desde donde va. CUE y el toque del plato siguen siendo instantáneos.
+- Los efectos se procesan aunque el deck esté en silencio o con el fader
+  abajo: las colas de echo/reverb se apagan solas.

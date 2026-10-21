@@ -164,9 +164,11 @@ class DjController extends ChangeNotifier {
     var dirty = false;
     for (var i = 0; i < 2; i++) {
       final d = deck(i);
-      if (!d.loaded || !d.playing) continue;
+      if (!d.loaded) continue;
+      // Playing, scratching or braking: the playhead moves, follow it.
+      if (!d.playing && !_engine.platterActive(i)) continue;
       d.position = _engine.position(i);
-      d.playing = _engine.isPlaying(i);
+      if (d.playing) d.playing = _engine.isPlaying(i);
       if (d.loopEnabled) {
         _readLoop(i);
       }
@@ -307,9 +309,14 @@ class DjController extends ChangeNotifier {
   void playPause(int deckIndex) {
     final d = deck(deckIndex);
     if (!d.loaded) return;
-    final next = !d.playing;
-    _engine.play(deckIndex, next);
-    d.playing = next;
+    if (d.playing) {
+      // Stop like a turntable: the motor winds down instead of cutting.
+      _engine.brake(deckIndex);
+      d.playing = false;
+    } else {
+      _engine.play(deckIndex, true);
+      d.playing = true;
+    }
     notifyListeners();
   }
 

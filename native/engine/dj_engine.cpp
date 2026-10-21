@@ -107,6 +107,7 @@ struct Deck {
   std::atomic<bool> scratching{false};
   std::atomic<float> scratchRate{0.0f};
   double scratchCur = 0.0;
+  std::atomic<bool> braking{false};
   float filter = 0.0f; // -1 HPF .. 0 flat .. +1 LPF
   float eqLow = 0, eqMid = 0, eqHigh = 0;
   float eqLowG = 1, eqMidG = 1, eqHighG = 1;
@@ -718,7 +719,16 @@ struct Engine {
       // Smooth the hand's velocity per block (≈5 ms) so direction changes
       // don't click, then read straight from the cache in either direction.
       const double target = (double)d.scratchRate.load(std::memory_order_relaxed);
-      d.scratchCur += (target - d.scratchCur) * 0.35;
+      const bool braking = d.braking.load(std::memory_order_relaxed);
+      // Hand: snappy. Brake: a vinyl motor winding down over ~0.8 s.
+      d.scratchCur += (target - d.scratchCur) * (braking ? 0.035 : 0.35);
+      if (braking && std::fabs(d.scratchCur) < 0.01) {
+        d.scratchCur = 0.0;
+        d.braking.store(false);
+        d.scratching.store(false);
+        d.flushStretcher();
+        d.stretchPrimed = false;
+      }
       const double step = std::max(-4.0, std::min(4.0, d.scratchCur));
       const double total = (double)d.totalFrames;
       if (std::fabs(step) < 1.0e-4) {
@@ -748,13 +758,17 @@ struct Engine {
       d.pauseXf = false;
     }
 
+    if (!filled && !d.playing && d.gate <= 0.0f) {
+      // Silent deck: still run the effect so echo / reverb tails ring out.
+      std::fill(left, left + frames, 0.0f);
+      std::fill(right, right + frames, 0.0f);
+      d.pauseXf = false;
+      d.fx.prepare(d.sampleRate > 0 ? d.sampleRate : engineSampleRate.load());
+      d.fx.process(left, right, frames, (double)d.bpm * (double)d.rate);
+      return;
+    }
+
     if (!filled) {
-      if (!d.playing && d.gate <= 0.0f) {
-        std::fill(left, left + frames, 0.0f);
-        std::fill(right, right + frames, 0.0f);
-        d.pauseXf = false;
-        return;
-      }
       if (d.playing) {
         d.pauseXf = false;
         renderPlay(d, left, right, frames, true);
@@ -1224,6 +1238,14 @@ void dj_play(DjEngine engine, int deck, int playing) {
   Deck& d = asEngine(engine)->decks[deck];
   std::lock_guard<std::mutex> lock(d.mutex);
   const bool start = playing != 0 && d.loaded;
+  if (d.braking.load()) {
+    // Play pressed mid-brake: pick up from wherever the record is now.
+    d.braking.store(false);
+    d.scratching.store(false);
+    d.scratchCur = 0.0;
+    d.flushStretcher();
+    d.stretchPrimed = false;
+  }
   d.playing = start;
   // Warm the stretcher here (UI thread) so the first keylock callback does
   // not spend its whole period priming and starve the other deck.
@@ -1572,6 +1594,7 @@ void dj_set_fx(DjEngine engine, int deck, int type, float amount, float beats) {
 void dj_scratch_begin(DjEngine engine, int deck) {
   if (deck < 0 || deck > 1) return;
   Deck& d = asEngine(engine)->decks[deck];
+  d.braking.store(false);
   d.scratchRate.store(0.0f);
   d.scratchCur = 0.0;
   d.scratching.store(true);
@@ -1586,11 +1609,29 @@ void dj_scratch_end(DjEngine engine, int deck) {
   if (deck < 0 || deck > 1) return;
   Deck& d = asEngine(engine)->decks[deck];
   d.scratchRate.store(0.0f);
+  d.braking.store(false);
   d.scratching.store(false);
   std::lock_guard<std::mutex> lock(d.mutex);
   // Resume from where the hand left the record: re-prime the stretcher there.
   d.flushStretcher();
   d.stretchPrimed = false;
+}
+
+void dj_brake(DjEngine engine, int deck) {
+  if (deck < 0 || deck > 1) return;
+  Deck& d = asEngine(engine)->decks[deck];
+  std::lock_guard<std::mutex> lock(d.mutex);
+  if (!d.loaded || !d.playing) return;
+  d.playing = false;
+  d.scratchCur = (double)d.rate;
+  d.scratchRate.store(0.0f);
+  d.braking.store(true);
+  d.scratching.store(true);
+}
+
+int dj_platter_active(DjEngine engine, int deck) {
+  if (deck < 0 || deck > 1) return 0;
+  return asEngine(engine)->decks[deck].scratching.load() ? 1 : 0;
 }
 
 } // extern "C"

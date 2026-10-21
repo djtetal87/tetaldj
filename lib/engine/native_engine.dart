@@ -208,6 +208,10 @@ class NativeEngine {
       );
   late final _scratchEnd = _lib
       .lookupFunction<_DeckVoidC, void Function(Pointer<Void>, int)>('dj_scratch_end');
+  late final _brake = _lib
+      .lookupFunction<_DeckVoidC, void Function(Pointer<Void>, int)>('dj_brake');
+  late final _platterActive = _lib
+      .lookupFunction<_PlayingC, int Function(Pointer<Void>, int)>('dj_platter_active');
   late final _setFx = _lib
       .lookupFunction<_SetFxC, void Function(Pointer<Void>, int, int, double, double)>(
         'dj_set_fx',
@@ -307,6 +311,12 @@ class NativeEngine {
   void scratchBegin(int deck) => _scratchBegin(_handle, deck);
   void scratchRate(int deck, double rate) => _scratchRate(_handle, deck, rate);
   void scratchEnd(int deck) => _scratchEnd(_handle, deck);
+
+  /// Stop like a turntable motor winding down.
+  void brake(int deck) => _brake(_handle, deck);
+
+  /// True while scratching or braking: the playhead moves without playing.
+  bool platterActive(int deck) => _platterActive(_handle, deck) != 0;
 
   /// Insert effect: type 0 none, 1 echo, 2 reverb, 3 flanger, 4 phaser,
   /// 5 crush, 6 gate; amount 0..1; beats for the tempo-synced ones.
