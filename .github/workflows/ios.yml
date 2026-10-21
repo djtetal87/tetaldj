@@ -64,6 +64,9 @@ jobs:
         run: |
           set -o pipefail
           flutter --version
+          # Keep every plugin on CocoaPods: with Swift Package Manager on, Xcode
+          # insists on a Development Team even for an unsigned build.
+          flutter config --no-enable-swift-package-manager
           flutter pub get
           flutter build ios --release --no-codesign 2>&1 | tee build.log
 
