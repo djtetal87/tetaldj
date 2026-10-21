@@ -123,6 +123,11 @@ class MidiController extends ChangeNotifier {
       if (action != null) {
         lastMessage = action.toString();
         _handle(action, m, p.timestamp);
+      } else {
+        // Unmapped: show the raw bytes so a missing control can be mapped.
+        String h(int v) => v.toRadixString(16).padLeft(2, '0').toUpperCase();
+        lastMessage = 'sin mapear ${h(status)} ${h(d1)} ${h(d2)}';
+        notifyListeners();
       }
       i += len;
     }

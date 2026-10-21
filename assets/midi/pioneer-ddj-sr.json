@@ -21,6 +21,7 @@
     "0x17": "vinyl",
     "0x36": "jogTouch",
     "0x35": "jogTouch",
+    "0x67": "jogTouch",
     "0x3F": "shift",
     "0x1B": "padModeHotcue",
     "0x1E": "padModeRoll",
