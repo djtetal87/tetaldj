@@ -68,13 +68,16 @@ jobs:
           # insists on a Development Team even for an unsigned build.
           flutter config --no-enable-swift-package-manager
           flutter pub get
-          flutter build ios --release --no-codesign 2>&1 | tee build.log
+          flutter build ios --release --no-codesign -v 2>&1 | tee build.log
 
       - name: Build log to the summary (failure only)
         if: failure()
         run: |
           {
             echo "### Build failed: iOS arm64"
+            echo '```'
+            grep -nE "error:|error |❌|Undefined symbol|ld: " build.log | head -n 60 || true
+            echo '```'
             echo '```'
             tail -n 150 build.log 2>/dev/null || true
             echo '```'
