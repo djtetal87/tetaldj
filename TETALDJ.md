@@ -186,3 +186,7 @@ que no se puede probar fuera de macOS: el log queda en el summary del run.
   scratch con suavizado más directo (0,6/bloque); quieto a los 45 ms.
 - Interruptor "Modo vinilo en el jog" (encendido por defecto) en Ajustes.
 - Ajustes: "About" reducido a TetalDJ + versión + licencias.
+- Jog MIDI: velocidad medida por ventana de 20 ms (USB no trae timestamps);
+  DDJ-SR calibrada con `jogTicksPerRev: 1170` (lo que Cesar eligió como
+  ~1,75x sobre 2048); control "Sensibilidad del scratch" y "Modo vinilo"
+  persistidos en SharedPreferences.

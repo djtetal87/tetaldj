@@ -255,7 +255,7 @@ class _SettingsPageState extends State<SettingsPage> {
                     max: 4,
                     divisions: 15,
                     label: '${midi.scratchSensitivity.toStringAsFixed(2)}x',
-                    onChanged: (v) => setState(() => midi.scratchSensitivity = v),
+                    onChanged: midi.setScratchSensitivity,
                   ),
                 ),
                 SizedBox(

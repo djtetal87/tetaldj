@@ -2,6 +2,7 @@ import 'dart:async';
 
 import 'package:flutter/foundation.dart';
 import 'package:flutter_midi_command/flutter_midi_command.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 import 'package:sidedeck/midi/midi_mapping.dart';
 import 'package:sidedeck/state/dj_controller.dart';
 import 'package:sidedeck/state/library_controller.dart';
@@ -16,6 +17,7 @@ class MidiController extends ChangeNotifier {
     _sub = _midi.onMidiDataReceived?.listen(_onPacket);
     _setupSub = _midi.onMidiSetupChanged?.listen((_) => refresh());
     dj.addListener(_onDeckChanged);
+    _loadPrefs();
     refresh();
   }
 
@@ -38,15 +40,16 @@ class MidiController extends ChangeNotifier {
   final List<bool> _vinyl = [true, true];
 
   bool get vinylMode => _vinyl[0];
-  void setVinylMode(bool on) {
+  Future<void> setVinylMode(bool on) async {
     _vinyl[0] = on;
     _vinyl[1] = on;
     _led(0, 'vinyl', on);
     _led(1, 'vinyl', on);
     notifyListeners();
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setBool('midi.vinyl', on);
   }
   final List<bool> _touching = [false, false];
-  final List<int> _lastTickUs = [0, 0];
   final List<Timer?> _still = [null, null];
   final Map<String, int> _msb = {};
   int _browseIndex = 0;
@@ -321,8 +324,24 @@ class MidiController extends ChangeNotifier {
     return ((f - 0.5) / 0.5) * 6;
   }
 
-  /// Scratch sensitivity multiplier (1 = one jog turn is 1.8 s of audio).
+  /// Scratch sensitivity multiplier on top of the mapping's calibration.
   double scratchSensitivity = 1.0;
+
+  Future<void> _loadPrefs() async {
+    final prefs = await SharedPreferences.getInstance();
+    scratchSensitivity = prefs.getDouble('midi.scratchSensitivity') ?? 1.0;
+    final vinyl = prefs.getBool('midi.vinyl') ?? true;
+    _vinyl[0] = vinyl;
+    _vinyl[1] = vinyl;
+    notifyListeners();
+  }
+
+  Future<void> setScratchSensitivity(double v) async {
+    scratchSensitivity = v;
+    notifyListeners();
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setDouble('midi.scratchSensitivity', v);
+  }
   final List<int> _tickAccum = [0, 0];
   final List<Timer?> _tickTimer = [null, null];
   final List<int> _quiet = [0, 0];
