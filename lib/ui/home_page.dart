@@ -29,6 +29,9 @@ class _HomePageState extends State<HomePage> {
   final _padMode = [PadMode.hotcue, PadMode.hotcue];
   final _padPage = [0, 0];
   final _tempoMode = [false, false];
+  // Seconds of audio visible in the stacked waves; pinch to change.
+  double _waveZoom = 5;
+  double _zoomAtPinchStart = 5;
   bool _mixerDialogOpen = false;
   BuildContext? _mixerDialogContext;
 
@@ -264,7 +267,11 @@ class _HomePageState extends State<HomePage> {
                 child: const SizedBox(
                   width: 28,
                   height: 22,
-                  child: Icon(Icons.settings, size: 14, color: SideDeckTheme.muted),
+                  child: Icon(
+                    Icons.settings,
+                    size: 14,
+                    color: SideDeckTheme.muted,
+                  ),
                 ),
               ),
             ),
@@ -313,15 +320,18 @@ class _HomePageState extends State<HomePage> {
     final remaining = (d.duration - d.position).clamp(0.0, 99999.0);
     final info = d.loaded
         ? Column(
-            crossAxisAlignment:
-                mirrored ? CrossAxisAlignment.end : CrossAxisAlignment.start,
+            crossAxisAlignment: mirrored
+                ? CrossAxisAlignment.end
+                : CrossAxisAlignment.start,
             children: [
               Row(
                 textDirection: mirrored ? TextDirection.rtl : TextDirection.ltr,
                 children: [
                   Expanded(
                     child: Text(
-                      d.artist.isNotEmpty ? '${d.title} - ${d.artist}' : d.title,
+                      d.artist.isNotEmpty
+                          ? '${d.title} - ${d.artist}'
+                          : d.title,
                       maxLines: 1,
                       overflow: TextOverflow.ellipsis,
                       textAlign: mirrored ? TextAlign.right : TextAlign.left,
@@ -375,7 +385,9 @@ class _HomePageState extends State<HomePage> {
             behavior: HitTestBehavior.opaque,
             onTap: _openLibrary,
             child: Align(
-              alignment: mirrored ? Alignment.centerRight : Alignment.centerLeft,
+              alignment: mirrored
+                  ? Alignment.centerRight
+                  : Alignment.centerLeft,
               child: const Text(
                 'Toca para cargar un tema',
                 style: TextStyle(
@@ -477,7 +489,7 @@ class _HomePageState extends State<HomePage> {
             loopEnd: d.loopEnd,
             cuePoint: d.cuePoint,
             hotcues: d.hotcues,
-            zoom: 5,
+            zoom: _waveZoom,
             showOverview: false,
             onSeek: d.loaded ? (t) => _dj.seek(i, t) : null,
           ),
@@ -491,34 +503,50 @@ class _HomePageState extends State<HomePage> {
           if (d.loaded && _gridEditDeck == i)
             Positioned(left: 4, bottom: 3, child: _gridEditorBar(i, accent)),
           if (d.loaded)
-            Positioned(
-              right: 4,
-              top: 3,
-              child: _gridButton(i, accent),
-            ),
+            Positioned(right: 4, top: 3, child: _gridButton(i, accent)),
         ],
       );
     }
 
-    return ClipRRect(
-      borderRadius: BorderRadius.circular(4),
-      child: Stack(
-        fit: StackFit.expand,
-        children: [
-          Column(
-            children: [
-              Expanded(child: wave(0)),
-              Container(height: 1, color: SideDeckTheme.stroke),
-              Expanded(child: wave(1)),
-            ],
-          ),
-          // One playhead across both decks.
-          IgnorePointer(
-            child: Center(
-              child: Container(width: 2, color: Colors.white),
+    return GestureDetector(
+      onScaleStart: (_) => _zoomAtPinchStart = _waveZoom,
+      onScaleUpdate: (e) {
+        if (e.pointerCount < 2) return;
+        setState(
+          () => _waveZoom = (_zoomAtPinchStart / e.scale).clamp(1.5, 24.0),
+        );
+      },
+      child: ClipRRect(
+        borderRadius: BorderRadius.circular(4),
+        child: Stack(
+          fit: StackFit.expand,
+          children: [
+            Column(
+              children: [
+                Expanded(child: wave(0)),
+                Container(height: 1, color: SideDeckTheme.stroke),
+                Expanded(child: wave(1)),
+              ],
             ),
-          ),
-        ],
+            // One playhead across both decks.
+            IgnorePointer(
+              child: Center(child: Container(width: 2, color: Colors.white)),
+            ),
+            Positioned(
+              left: 6,
+              top: 4,
+              child: IgnorePointer(
+                child: Text(
+                  '${_waveZoom.toStringAsFixed(_waveZoom < 4 ? 1 : 0)} s',
+                  style: const TextStyle(
+                    fontSize: 9,
+                    color: SideDeckTheme.muted,
+                  ),
+                ),
+              ),
+            ),
+          ],
+        ),
       ),
     );
   }
@@ -664,8 +692,8 @@ class _HomePageState extends State<HomePage> {
     final fg = !enabled
         ? SideDeckTheme.muted.withValues(alpha: 0.6)
         : filled
-            ? Colors.black
-            : color;
+        ? Colors.black
+        : color;
     return GestureDetector(
       onTap: enabled
           ? () {
@@ -682,7 +710,9 @@ class _HomePageState extends State<HomePage> {
           color: filled && enabled ? color : SideDeckTheme.panelAlt,
           borderRadius: BorderRadius.circular(26),
           border: Border.all(
-            color: enabled && !wide ? color.withValues(alpha: 0.75) : SideDeckTheme.stroke,
+            color: enabled && !wide
+                ? color.withValues(alpha: 0.75)
+                : SideDeckTheme.stroke,
             width: 1.5,
           ),
           boxShadow: filled && enabled
@@ -706,16 +736,16 @@ class _HomePageState extends State<HomePage> {
                 ],
               )
             : icon != null
-                ? Icon(icon, size: 28, color: fg)
-                : Text(
-                    label!,
-                    style: TextStyle(
-                      fontSize: 11,
-                      fontWeight: FontWeight.w800,
-                      letterSpacing: 0.6,
-                      color: fg,
-                    ),
-                  ),
+            ? Icon(icon, size: 28, color: fg)
+            : Text(
+                label!,
+                style: TextStyle(
+                  fontSize: 11,
+                  fontWeight: FontWeight.w800,
+                  letterSpacing: 0.6,
+                  color: fg,
+                ),
+              ),
       ),
     );
   }
@@ -754,8 +784,20 @@ class _HomePageState extends State<HomePage> {
       ),
       child: Row(
         children: mirrored
-            ? [dots, const SizedBox(width: 4), pads, const SizedBox(width: 6), modeBtn]
-            : [modeBtn, const SizedBox(width: 6), pads, const SizedBox(width: 4), dots],
+            ? [
+                dots,
+                const SizedBox(width: 4),
+                pads,
+                const SizedBox(width: 6),
+                modeBtn,
+              ]
+            : [
+                modeBtn,
+                const SizedBox(width: 6),
+                pads,
+                const SizedBox(width: 4),
+                dots,
+              ],
       ),
     );
   }
@@ -880,7 +922,9 @@ class _HomePageState extends State<HomePage> {
             color: SideDeckTheme.stems,
             filled: false,
             enabled: true,
-            label: slot == 0 ? '${(d.stemsProgress * 100).round()}%' : (slot == 3 ? 'STOP' : '…'),
+            label: slot == 0
+                ? '${(d.stemsProgress * 100).round()}%'
+                : (slot == 3 ? 'STOP' : '…'),
             small: true,
             onTap: slot == 3 ? _dj.cancelStems : null,
           );
@@ -890,7 +934,9 @@ class _HomePageState extends State<HomePage> {
             color: SideDeckTheme.stems,
             filled: false,
             enabled: d.loaded,
-            label: d.stemsReady ? DjController.stemNames[slot] : (slot == 0 ? 'PREPARAR' : 'STEMS'),
+            label: d.stemsReady
+                ? DjController.stemNames[slot]
+                : (slot == 0 ? 'PREPARAR' : 'STEMS'),
             small: true,
             onTap: () => _dj.prepareStems(i),
           );
@@ -1002,7 +1048,10 @@ class _HomePageState extends State<HomePage> {
                       children: [
                         for (final t in FxType.values)
                           ChoiceChip(
-                            label: Text(t.label, style: const TextStyle(fontSize: 11)),
+                            label: Text(
+                              t.label,
+                              style: const TextStyle(fontSize: 11),
+                            ),
                             selected: d.fx == t,
                             selectedColor: SideDeckTheme.fx,
                             onSelected: (_) => _dj.setFx(i, type: t),
@@ -1016,7 +1065,13 @@ class _HomePageState extends State<HomePage> {
                   children: [
                     const SizedBox(
                       width: 70,
-                      child: Text('INTENSIDAD', style: TextStyle(fontSize: 10, color: SideDeckTheme.muted)),
+                      child: Text(
+                        'INTENSIDAD',
+                        style: TextStyle(
+                          fontSize: 10,
+                          color: SideDeckTheme.muted,
+                        ),
+                      ),
                     ),
                     Expanded(
                       child: SliderTheme(
@@ -1037,7 +1092,10 @@ class _HomePageState extends State<HomePage> {
                       child: Text(
                         '${(d.fxAmount * 100).round()}%',
                         textAlign: TextAlign.right,
-                        style: const TextStyle(fontSize: 12, fontWeight: FontWeight.w700),
+                        style: const TextStyle(
+                          fontSize: 12,
+                          fontWeight: FontWeight.w700,
+                        ),
                       ),
                     ),
                   ],
@@ -1046,7 +1104,13 @@ class _HomePageState extends State<HomePage> {
                   children: [
                     const SizedBox(
                       width: 70,
-                      child: Text('TIEMPO', style: TextStyle(fontSize: 10, color: SideDeckTheme.muted)),
+                      child: Text(
+                        'TIEMPO',
+                        style: TextStyle(
+                          fontSize: 10,
+                          color: SideDeckTheme.muted,
+                        ),
+                      ),
                     ),
                     for (final b in _fxBeats) ...[
                       ChoiceChip(
@@ -1060,7 +1124,13 @@ class _HomePageState extends State<HomePage> {
                       ),
                       const SizedBox(width: 6),
                     ],
-                    const Text('beats', style: TextStyle(fontSize: 10, color: SideDeckTheme.muted)),
+                    const Text(
+                      'beats',
+                      style: TextStyle(
+                        fontSize: 10,
+                        color: SideDeckTheme.muted,
+                      ),
+                    ),
                   ],
                 ),
               ],
@@ -1144,7 +1214,11 @@ class _HomePageState extends State<HomePage> {
           ),
           child: Text(
             label,
-            style: const TextStyle(fontSize: 16, fontWeight: FontWeight.w800, height: 1),
+            style: const TextStyle(
+              fontSize: 16,
+              fontWeight: FontWeight.w800,
+              height: 1,
+            ),
           ),
         ),
       );
@@ -1163,7 +1237,10 @@ class _HomePageState extends State<HomePage> {
             step('»', () => _dj.shiftGridBeats(deck, 1)),
             const Padding(
               padding: EdgeInsets.symmetric(horizontal: 6),
-              child: Text('beat · 5 ms', style: TextStyle(fontSize: 9, color: SideDeckTheme.muted)),
+              child: Text(
+                'beat · 5 ms',
+                style: TextStyle(fontSize: 9, color: SideDeckTheme.muted),
+              ),
             ),
             step('‹', () => _dj.shiftGridMs(deck, -5)),
             const SizedBox(width: 4),
