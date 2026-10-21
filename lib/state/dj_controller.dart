@@ -598,7 +598,7 @@ class DjController extends ChangeNotifier {
         d.stemsProgress = stems.progress;
         notifyListeners();
       });
-      final ok = await Isolate.run(() => runStemSeparation([path, model, dir]));
+      final ok = await _separateInIsolate([path, model, dir]);
       _stemsPoll?.cancel();
       _stemsPoll = null;
       if (!ok) {
@@ -624,6 +624,12 @@ class DjController extends ChangeNotifier {
       notifyListeners();
     }
   }
+
+  /// Static so the isolate closure captures only the argument list (a
+  /// closure created inside an instance method would drag `this`, with its
+  /// Timer, into the message and fail to send).
+  static Future<bool> _separateInIsolate(List<String> args) =>
+      Isolate.run(() => runStemSeparation(args));
 
   void cancelStems() => StemsNative.instance.cancel();
 
