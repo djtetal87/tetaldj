@@ -41,6 +41,7 @@
 #include "chunk_cache.hpp"
 #include "mix_recorder.hpp"
 #include "deck_fx.hpp"
+#include "stem_separator.hpp"
 
 #include "platform_log.hpp"
 
@@ -108,6 +109,44 @@ struct Deck {
   std::atomic<float> scratchRate{0.0f};
   double scratchCur = 0.0;
   std::atomic<bool> braking{false};
+
+  // Stems: four extra caches (vocals, drums, bass, other) mixed by gain in
+  // place of the main cache while stemsOn. Attached from the UI thread
+  // under the deck mutex; the audio thread only reads.
+  std::unique_ptr<ChunkCache> stemCache[4];
+  std::atomic<float> stemGain[4] = {{1.0f}, {1.0f}, {1.0f}, {1.0f}};
+  std::atomic<bool> stemsOn{false};
+  std::vector<float> stemL, stemR;
+
+  // Read a run of frames from the active source (stems mix or main cache).
+  void read(double pos, double step, float* L, float* R, int n, bool priming = false) {
+    if (!stemsOn.load(std::memory_order_relaxed)) {
+      cache.readRun(pos, step, L, R, n, priming);
+      return;
+    }
+    if ((int)stemL.size() < n) {
+      stemL.assign((size_t)n, 0.0f);
+      stemR.assign((size_t)n, 0.0f);
+    }
+    std::fill(L, L + n, 0.0f);
+    std::fill(R, R + n, 0.0f);
+    for (int s = 0; s < 4; ++s) {
+      ChunkCache* c = stemCache[s].get();
+      if (!c) continue;
+      const float g = stemGain[s].load(std::memory_order_relaxed);
+      if (g <= 0.0005f) {
+        // Keep the cache following the playhead even when muted so the
+        // stem comes back instantly.
+        c->readRun(pos, step, stemL.data(), stemR.data(), n, priming);
+        continue;
+      }
+      c->readRun(pos, step, stemL.data(), stemR.data(), n, priming);
+      for (int i = 0; i < n; ++i) {
+        L[i] += stemL[i] * g;
+        R[i] += stemR[i] * g;
+      }
+    }
+  }
   float filter = 0.0f; // -1 HPF .. 0 flat .. +1 LPF
   float eqLow = 0, eqMid = 0, eqHigh = 0;
   float eqLowG = 1, eqMidG = 1, eqHighG = 1;
@@ -165,7 +204,7 @@ struct Deck {
     const double b = loopEnd * sr;
     const double len = b - a;
     if (!allowWrap || !loopEnabled || len <= 1.0e-6) {
-      cache.readRun(pos, st, L, R, n, priming);
+      read(pos, st, L, R, n, priming);
       return pos + (double)n * st;
     }
     // Stay inside the loop, and only fade from run-up that exists. A loop
@@ -187,9 +226,9 @@ struct Deck {
       const bool fading = fade > 0.0 && pos >= fadeStart;
       int cnt = (int)std::ceil(((fading ? b : fadeStart) - pos) / st);
       cnt = std::max(1, std::min(cnt, n - done));
-      cache.readRun(pos, st, L + done, R + done, cnt, priming);
+      read(pos, st, L + done, R + done, cnt, priming);
       if (fading) {
-        cache.readRun(pos - len, st, loopXfL.data(), loopXfR.data(), cnt, priming);
+        read(pos - len, st, loopXfL.data(), loopXfR.data(), cnt, priming);
         for (int k = 0; k < cnt; ++k) {
           const float u = clamp01((float)((pos + (double)k * st - fadeStart) / fade));
           L[done + k] = L[done + k] * (1.0f - u) + loopXfL[k] * u;
@@ -225,17 +264,38 @@ struct Deck {
                     ChunkCache::kChunkFrames * 2};
     }
     cache.hintEngineSpans(spans, n);
+    if (stemsOn.load(std::memory_order_relaxed)) {
+      for (auto& c : stemCache) if (c) c->hintEngineSpans(spans, n);
+    }
   }
 
   void hintHot() {
     const int sr = std::max(1, sampleRate);
     cache.setHotFrame((int64_t)playhead);
     cache.hintEngineFrames((int64_t)playhead, sr);
+    if (stemsOn.load(std::memory_order_relaxed)) {
+      for (auto& c : stemCache) {
+        if (!c) continue;
+        c->setHotFrame((int64_t)playhead);
+        c->hintEngineFrames((int64_t)playhead, sr);
+      }
+    }
     hintAnchors();
+  }
+
+  void detachStems() {
+    stemsOn.store(false);
+    for (auto& c : stemCache) {
+      if (c) c->stop();
+      c.reset();
+    }
   }
 
   void commitJumpTo(double destFrames, bool shiftLoop = false, double loopDelta = 0.0) {
     cache.jumpTo((int64_t)destFrames);
+    if (stemsOn.load(std::memory_order_relaxed)) {
+      for (auto& c : stemCache) if (c) c->jumpTo((int64_t)destFrames);
+    }
     hintAnchors();
     if (shiftLoop) {
       pendingLoopDelta.store(loopDelta);
@@ -735,7 +795,7 @@ struct Engine {
         std::fill(left, left + frames, 0.0f);
         std::fill(right, right + frames, 0.0f);
       } else {
-        d.cache.readRun(d.playhead, step, left, right, frames);
+        d.read(d.playhead, step, left, right, frames);
         d.playhead = std::max(0.0, std::min(total - 1.0, d.playhead + (double)frames * step));
         const float g = d.gain * d.fader;
         for (int i = 0; i < frames; ++i) {
@@ -1116,6 +1176,7 @@ int dj_load_with_analysis(DjEngine engine, int deck, const char* path, float bpm
     d.gate = 0.0f;
     d.pauseXf = false;
   }
+  d.detachStems();
   if (!d.cache.open(path, sr)) {
     if (djGetLastError()[0] == '\0') {
       djSetLastError("Couldn't open this file for playback.");
@@ -1228,6 +1289,7 @@ void dj_unload(DjEngine engine, int deck) {
     d.totalFrames = 0;
     d.path.clear();
   }
+  d.detachStems();
   d.cache.stop();
 }
 
@@ -1632,6 +1694,65 @@ void dj_brake(DjEngine engine, int deck) {
 int dj_platter_active(DjEngine engine, int deck) {
   if (deck < 0 || deck > 1) return 0;
   return asEngine(engine)->decks[deck].scratching.load() ? 1 : 0;
+}
+
+// ---- stems ---------------------------------------------------------------
+
+static stems::Progress g_stemProgress;
+
+int dj_stems_separate(const char* input_path, const char* model_path, const char* out_dir) {
+  if (!input_path || !model_path || !out_dir) return 0;
+  g_stemProgress.cancel.store(false);
+  return stems::separate(input_path, model_path, out_dir, g_stemProgress) ? 1 : 0;
+}
+
+float dj_stems_progress(void) { return g_stemProgress.fraction.load(); }
+int dj_stems_state(void) { return g_stemProgress.state.load(); }
+void dj_stems_cancel(void) { g_stemProgress.cancel.store(true); }
+const char* dj_stems_error(void) { return g_stemProgress.error.c_str(); }
+
+int dj_stems_attach(DjEngine engine, int deck, const char* dir) {
+  if (deck < 0 || deck > 1 || !dir) return 0;
+  Deck& d = asEngine(engine)->decks[deck];
+  static const char* names[4] = {"vocals.wav", "drums.wav", "bass.wav", "other.wav"};
+  std::unique_ptr<ChunkCache> caches[4];
+  const int sr = d.sampleRate > 0 ? d.sampleRate : asEngine(engine)->engineSampleRate.load();
+  for (int s = 0; s < 4; ++s) {
+    caches[s] = std::make_unique<ChunkCache>();
+    const std::string path = std::string(dir) + "/" + names[s];
+    if (!caches[s]->open(path.c_str(), sr)) {
+      LOGE("stems: could not open %s", path.c_str());
+      return 0;
+    }
+  }
+  std::lock_guard<std::mutex> lock(d.mutex);
+  d.stemsOn.store(false);
+  for (int s = 0; s < 4; ++s) {
+    if (d.stemCache[s]) d.stemCache[s]->stop();
+    d.stemCache[s] = std::move(caches[s]);
+    d.stemCache[s]->jumpTo((int64_t)d.playhead);
+    d.stemCache[s]->hintEngineFrames((int64_t)d.playhead, sr);
+  }
+  for (int s = 0; s < 4; ++s) d.stemCache[s]->waitChunk((int)(d.playhead / ChunkCache::kChunkFrames), 1500);
+  d.stemsOn.store(true);
+  return 1;
+}
+
+void dj_stems_detach(DjEngine engine, int deck) {
+  if (deck < 0 || deck > 1) return;
+  Deck& d = asEngine(engine)->decks[deck];
+  std::lock_guard<std::mutex> lock(d.mutex);
+  d.detachStems();
+}
+
+int dj_stems_attached(DjEngine engine, int deck) {
+  if (deck < 0 || deck > 1) return 0;
+  return asEngine(engine)->decks[deck].stemsOn.load() ? 1 : 0;
+}
+
+void dj_set_stem_gain(DjEngine engine, int deck, int stem, float gain) {
+  if (deck < 0 || deck > 1 || stem < 0 || stem > 3) return;
+  asEngine(engine)->decks[deck].stemGain[stem].store(std::max(0.0f, std::min(1.5f, gain)));
 }
 
 } // extern "C"

@@ -1,8 +1,11 @@
 import 'dart:async';
 import 'dart:io';
+import 'dart:isolate';
 import 'dart:math' as math;
 
+import 'package:crypto/crypto.dart';
 import 'package:flutter/foundation.dart';
+import 'package:flutter/services.dart' show rootBundle;
 import 'package:path/path.dart' as p;
 import 'package:path_provider/path_provider.dart';
 import 'package:sidedeck/engine/analysis_cache.dart';
@@ -41,6 +44,14 @@ class DeckState {
   double rate = 1;
   bool synced = false;
   bool keylock = true;
+
+  /// Stems: ready when the four files exist in the cache; on when the deck
+  /// is playing them; gains per stem (vocals, drums, bass, other).
+  bool stemsReady = false;
+  bool stemsOn = false;
+  bool stemsPreparing = false;
+  double stemsProgress = 0;
+  final List<double> stemGain = [1, 1, 1, 1];
 
   /// Insert effect (see [FxType]); amount 0..1, beats for synced effects.
   FxType fx = FxType.none;
@@ -239,6 +250,13 @@ class DjController extends ChangeNotifier {
     for (var i = 0; i < HotCueStore.slots; i++) {
       d.hotcues[i] = -1;
     }
+    d.stemsOn = false;
+    d.stemsPreparing = false;
+    d.stemsProgress = 0;
+    for (var i = 0; i < 4; i++) {
+      d.stemGain[i] = 1;
+    }
+    d.stemsReady = await _stemsCached(path);
     final savedCues = await _cueStore.load(path);
     savedCues.forEach((slot, seconds) {
       if (slot < 0) {
@@ -506,6 +524,144 @@ class DjController extends ChangeNotifier {
     recordingPath = null;
     notifyListeners();
     return path;
+  }
+
+  // ------------------------------------------------------------------ stems
+
+  static const stemNames = ['VOCAL', 'DRUMS', 'BASS', 'OTHER'];
+  static const _stemFiles = ['vocals.wav', 'drums.wav', 'bass.wav', 'other.wav'];
+  Timer? _stemsPoll;
+
+  Future<Directory> _stemsRoot() async {
+    final base = await getApplicationSupportDirectory();
+    return Directory(p.join(base.path, 'stems'));
+  }
+
+  Future<String> _stemsDirFor(String path) async {
+    final root = await _stemsRoot();
+    final stat = await File(path).stat();
+    final key = sha1.convert('$path|${stat.size}'.codeUnits).toString();
+    return p.join(root.path, key);
+  }
+
+  Future<bool> _stemsCached(String path) async {
+    try {
+      final dir = await _stemsDirFor(path);
+      for (final f in _stemFiles) {
+        if (!await File(p.join(dir, f)).exists()) return false;
+      }
+      return true;
+    } catch (_) {
+      return false;
+    }
+  }
+
+  /// The ONNX model ships as an asset; ONNX Runtime wants a file path, so it
+  /// is copied once into the app's support folder.
+  static const stemsModelAsset = 'assets/models/spleeter4.fp16.onnx';
+
+  Future<String> _stemsModelPath() async {
+    final base = await getApplicationSupportDirectory();
+    final file = File(p.join(base.path, 'models', 'spleeter4.fp16.onnx'));
+    if (await file.exists() && await file.length() > 1000000) return file.path;
+    final data = await rootBundle.load(stemsModelAsset);
+    await file.parent.create(recursive: true);
+    await file.writeAsBytes(data.buffer.asUint8List(data.offsetInBytes, data.lengthInBytes));
+    return file.path;
+  }
+
+  /// Separate the loaded track into stems (worker isolate), then switch the
+  /// deck to them. Progress is published through [DeckState.stemsProgress].
+  Future<void> prepareStems(int deckIndex) async {
+    final d = deck(deckIndex);
+    final path = d.path;
+    if (!d.loaded || path == null || d.stemsPreparing) return;
+    if (d.stemsReady) {
+      await setStemsOn(deckIndex, true);
+      return;
+    }
+    if (deckA.stemsPreparing || deckB.stemsPreparing) {
+      engineError = 'Ya hay una separación en curso; espera a que termine.';
+      notifyListeners();
+      return;
+    }
+    d.stemsPreparing = true;
+    d.stemsProgress = 0;
+    notifyListeners();
+    try {
+      final model = await _stemsModelPath();
+      final dir = await _stemsDirFor(path);
+      await Directory(dir).create(recursive: true);
+      final stems = StemsNative.instance;
+      _stemsPoll?.cancel();
+      _stemsPoll = Timer.periodic(const Duration(milliseconds: 250), (_) {
+        d.stemsProgress = stems.progress;
+        notifyListeners();
+      });
+      final ok = await Isolate.run(() => runStemSeparation([path, model, dir]));
+      _stemsPoll?.cancel();
+      _stemsPoll = null;
+      if (!ok) {
+        final err = stems.error;
+        if (err != 'cancelled') {
+          engineError = 'No se pudieron separar los stems${err.isEmpty ? '' : ': $err'}';
+        }
+        d.stemsPreparing = false;
+        notifyListeners();
+        return;
+      }
+      d.stemsReady = true;
+      d.stemsPreparing = false;
+      d.stemsProgress = 1;
+      // Still the same track on this deck?
+      if (d.path == path) await setStemsOn(deckIndex, true);
+      notifyListeners();
+    } catch (e) {
+      _stemsPoll?.cancel();
+      _stemsPoll = null;
+      d.stemsPreparing = false;
+      engineError = 'No se pudieron separar los stems: $e';
+      notifyListeners();
+    }
+  }
+
+  void cancelStems() => StemsNative.instance.cancel();
+
+  Future<void> setStemsOn(int deckIndex, bool on) async {
+    final d = deck(deckIndex);
+    final path = d.path;
+    if (!d.loaded || path == null) return;
+    if (!on) {
+      _engine.stemsDetach(deckIndex);
+      d.stemsOn = false;
+      notifyListeners();
+      return;
+    }
+    if (!d.stemsReady) return;
+    final dir = await _stemsDirFor(path);
+    final ok = _engine.stemsAttach(deckIndex, dir);
+    if (ok) {
+      d.stemsOn = true;
+      for (var i = 0; i < 4; i++) {
+        _engine.setStemGain(deckIndex, i, d.stemGain[i]);
+      }
+    } else {
+      engineError = 'No se pudieron cargar los stems de este tema.';
+      d.stemsReady = false;
+    }
+    notifyListeners();
+  }
+
+  void setStemGain(int deckIndex, int stem, double gain) {
+    final d = deck(deckIndex);
+    d.stemGain[stem] = gain.clamp(0.0, 1.5);
+    _engine.setStemGain(deckIndex, stem, d.stemGain[stem]);
+    notifyListeners();
+  }
+
+  void toggleStem(int deckIndex, int stem) {
+    final d = deck(deckIndex);
+    setStemGain(deckIndex, stem, d.stemGain[stem] > 0.01 ? 0.0 : 1.0);
   }
 
   void setFx(int deckIndex, {FxType? type, double? amount, double? beats}) {
@@ -793,6 +949,7 @@ class DjController extends ChangeNotifier {
 
   @override
   void dispose() {
+    _stemsPoll?.cancel();
     if (recordingPath != null) _engine.recordStop();
     _usbSub?.cancel();
     _ticker.cancel();

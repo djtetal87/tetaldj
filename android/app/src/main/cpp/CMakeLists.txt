@@ -23,6 +23,7 @@ include("${SIDEDECK_ROOT}/third_party/opus_stack.cmake")
 
 add_library(dj_engine SHARED
   "${ENGINE_DIR}/dj_engine.cpp"
+  "${ENGINE_DIR}/stem_separator.cpp"
   "${ENGINE_DIR}/last_error.cpp"
 )
 target_compile_definitions(dj_engine PRIVATE _USE_MATH_DEFINES)
@@ -46,3 +47,5 @@ target_link_libraries(dj_engine
   mediandk
   ${log-lib}
 )
+
+target_compile_definitions(dj_engine PRIVATE TETALDJ_NO_ORT)

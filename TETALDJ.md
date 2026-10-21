@@ -133,3 +133,23 @@ que no se puede probar fuera de macOS: el log queda en el summary del run.
   retoma desde donde va. CUE y el toque del plato siguen siendo instantáneos.
 - Los efectos se procesan aunque el deck esté en silencio o con el fader
   abajo: las colas de echo/reverb se apagan solas.
+
+### v0.4 — stems (2026-10-20)
+- `assets/models/spleeter4.fp16.onnx`: los cuatro U-Net de Spleeter 4stems
+  (deezer/spleeter v1.4.0, MIT) convertidos a ONNX en un solo archivo fp16
+  (79 MB); conversión verificada contra el grafo TF (diferencia < 1e-4).
+  Script de conversión: `tools/stems/` (unet4.py + convert4.py).
+- `native/engine/stem_separator.cpp`: decodifica, remuestrea a 44,1 kHz,
+  STFT 4096/1024 (Hann periódica), máscaras ratio con exponente 2, iSTFT
+  con overlap-add, y suma el residuo (>11 kHz y bordes) a "other" para que
+  los cuatro stems sumen exactamente el original. Escribe 4 WAV 16-bit.
+  Corre con ONNX Runtime (2 hilos); ~0,08x tiempo real en x86.
+- Motor: `Deck::read` mezcla cuatro `ChunkCache` (vocals/drums/bass/other)
+  por ganancia en vez del caché principal cuando los stems están activos;
+  `dj_stems_separate/progress/state/cancel/error`, `dj_stems_attach/detach`,
+  `dj_set_stem_gain`. En Android se compila con `TETALDJ_NO_ORT` (sin stems).
+- App: modo STEMS en los pads. Sin preparar: PREPARAR corre la separación en
+  un isolate con progreso; luego los cuatro pads silencian/activan cada stem
+  (mantener uno apaga el modo stems). Caché en
+  `Library/Application Support/stems/<sha1(ruta|tamaño)>/`.
+- iOS: el pod `onnxruntime-c` 1.20.0 va como dependencia del plugin FFI.

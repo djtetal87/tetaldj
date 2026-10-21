@@ -90,6 +90,23 @@ void dj_brake(DjEngine engine, int deck);
 /// 1 while the deck is scratching or braking (the playhead still moves).
 int dj_platter_active(DjEngine engine, int deck);
 
+/// Stems. dj_stems_separate blocks (run it on a worker thread / isolate):
+/// decodes input_path, runs the model at model_path and writes vocals.wav,
+/// drums.wav, bass.wav and other.wav into out_dir. Progress/state/cancel are
+/// global (one separation at a time). State: 0 idle, 1 running, 2 done, -1 error.
+int dj_stems_separate(const char* input_path, const char* model_path, const char* out_dir);
+float dj_stems_progress(void);
+int dj_stems_state(void);
+void dj_stems_cancel(void);
+const char* dj_stems_error(void);
+/// Attach the four stem files in dir to the deck (same track as loaded);
+/// the deck then plays the stems mixed by dj_set_stem_gain (0 vocals, 1 drums,
+/// 2 bass, 3 other) instead of the original file.
+int dj_stems_attach(DjEngine engine, int deck, const char* dir);
+void dj_stems_detach(DjEngine engine, int deck);
+int dj_stems_attached(DjEngine engine, int deck);
+void dj_set_stem_gain(DjEngine engine, int deck, int stem, float gain);
+
 /// Record the stereo master mix to a 16-bit WAV at [path]. Returns 1 on success.
 int dj_record_start(DjEngine engine, const char* path);
 void dj_record_stop(DjEngine engine);

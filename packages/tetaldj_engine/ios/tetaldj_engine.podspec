@@ -8,7 +8,7 @@
 Pod::Spec.new do |s|
   s.name             = 'tetaldj_engine'
   s.version          = '0.1.0'
-  s.summary          = 'TetalDJ native DJ engine (C++ / miniaudio).'
+  s.summary          = 'TetalDJ native DJ engine (C++ / miniaudio / ONNX Runtime).'
   s.description      = 'Two-deck DJ audio engine with time-stretch, EQ, filter, loops and hot cues.'
   s.homepage         = 'https://github.com/djtetal87/tetaldj'
   s.license          = { :type => 'GPL-3.0-or-later', :file => '../../../LICENSE' }
@@ -21,6 +21,8 @@ Pod::Spec.new do |s|
   s.frameworks       = 'CoreAudio', 'AudioToolbox', 'AVFoundation', 'CoreFoundation'
   s.platform         = :ios, '15.0'
   s.dependency 'Flutter'
+  # Stems model inference (dj_stems_separate) links against ONNX Runtime.
+  s.dependency 'onnxruntime-c', '1.20.0'
   s.pod_target_xcconfig = {
     'DEFINES_MODULE' => 'YES',
     'EXCLUDED_ARCHS[sdk=iphonesimulator*]' => 'i386',

@@ -31,6 +31,7 @@ add_library(dj_engine STATIC
   "${ENGINE_DIR}/dj_engine.cpp"
   "${ENGINE_DIR}/last_error.cpp"
   "${ENGINE_DIR}/audio_backend_miniaudio.cpp"
+  "${ENGINE_DIR}/stem_separator.cpp"
 )
 if(APPLE)
   set_source_files_properties("${ENGINE_DIR}/audio_backend_miniaudio.cpp"
@@ -45,8 +46,16 @@ target_include_directories(dj_engine PRIVATE
   "${THIRD}/signalsmith-linear/include"
   "${THIRD}/qm-dsp"
   "${THIRD}/miniaudio"
+  "${THIRD}/onnxruntime/include"
 )
 target_link_libraries(dj_engine PUBLIC qm_dsp opusfile)
+# ONNX Runtime provides the stems model inference. On iOS the symbols come
+# from the onnxruntime-c CocoaPod the FFI plugin depends on; elsewhere pass
+# -DTETALDJ_ORT_LIB=/path/to/libonnxruntime.so (or .dylib) to link it.
+set(TETALDJ_ORT_LIB "" CACHE FILEPATH "ONNX Runtime shared library to link (non-iOS)")
+if(TETALDJ_ORT_LIB)
+  target_link_libraries(dj_engine PUBLIC "${TETALDJ_ORT_LIB}")
+endif()
 
 if(APPLE)
   target_link_libraries(dj_engine PUBLIC

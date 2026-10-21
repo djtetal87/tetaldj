@@ -13,6 +13,7 @@ class SideDeckTheme {
   static const loop = Color(0xFF1DE9B6);
   static const danger = Color(0xFFFF3B30);
   static const fx = Color(0xFFFFB300);
+  static const stems = Color(0xFF7CFF4A);
 
   /// Camelot wheel colours, index 0 = 1A/1B … 11 = 12A/12B.
   static const camelot = [

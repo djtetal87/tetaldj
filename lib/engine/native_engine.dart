@@ -40,6 +40,12 @@ typedef _GetHotcueC = Double Function(Pointer<Void>, Int32, Int32);
 typedef _WaveBinsC = Int32 Function();
 typedef _RecordStartC = Int32 Function(Pointer<Void>, Pointer<Utf8>);
 typedef _RecordSecondsC = Double Function(Pointer<Void>);
+typedef _StemsSeparateC = Int32 Function(Pointer<Utf8>, Pointer<Utf8>, Pointer<Utf8>);
+typedef _FloatVoidC = Float Function();
+typedef _IntVoidC = Int32 Function();
+typedef _VoidVoidC = Void Function();
+typedef _StemsAttachC = Int32 Function(Pointer<Void>, Int32, Pointer<Utf8>);
+typedef _SetStemGainC = Void Function(Pointer<Void>, Int32, Int32, Float);
 typedef _SetFxC = Void Function(Pointer<Void>, Int32, Int32, Float, Float);
 typedef _WaveCopyC = Int32 Function(
   Pointer<Void>,
@@ -212,6 +218,18 @@ class NativeEngine {
       .lookupFunction<_DeckVoidC, void Function(Pointer<Void>, int)>('dj_brake');
   late final _platterActive = _lib
       .lookupFunction<_PlayingC, int Function(Pointer<Void>, int)>('dj_platter_active');
+  late final _stemsAttach = _lib
+      .lookupFunction<_StemsAttachC, int Function(Pointer<Void>, int, Pointer<Utf8>)>(
+        'dj_stems_attach',
+      );
+  late final _stemsDetach = _lib
+      .lookupFunction<_DeckVoidC, void Function(Pointer<Void>, int)>('dj_stems_detach');
+  late final _stemsAttached = _lib
+      .lookupFunction<_PlayingC, int Function(Pointer<Void>, int)>('dj_stems_attached');
+  late final _setStemGain = _lib
+      .lookupFunction<_SetStemGainC, void Function(Pointer<Void>, int, int, double)>(
+        'dj_set_stem_gain',
+      );
   late final _setFx = _lib
       .lookupFunction<_SetFxC, void Function(Pointer<Void>, int, int, double, double)>(
         'dj_set_fx',
@@ -243,10 +261,12 @@ class NativeEngine {
         )
       >('dj_waveform_bands_copy');
 
+  static DynamicLibrary library() => Platform.isAndroid
+      ? DynamicLibrary.open('libdj_engine.so')
+      : DynamicLibrary.process();
+
   static NativeEngine open() {
-    final lib = Platform.isAndroid
-        ? DynamicLibrary.open('libdj_engine.so')
-        : DynamicLibrary.process();
+    final lib = library();
     final create = lib.lookupFunction<_CreateC, _CreateC>('dj_create');
     final handle = create();
     final engine = NativeEngine._(lib, handle);
@@ -317,6 +337,21 @@ class NativeEngine {
 
   /// True while scratching or braking: the playhead moves without playing.
   bool platterActive(int deck) => _platterActive(_handle, deck) != 0;
+
+  /// Play the four stem files in [dir] instead of the loaded file.
+  bool stemsAttach(int deck, String dir) {
+    final p = dir.toNativeUtf8();
+    try {
+      return _stemsAttach(_handle, deck, p) != 0;
+    } finally {
+      malloc.free(p);
+    }
+  }
+
+  void stemsDetach(int deck) => _stemsDetach(_handle, deck);
+  bool stemsAttached(int deck) => _stemsAttached(_handle, deck) != 0;
+  void setStemGain(int deck, int stem, double gain) =>
+      _setStemGain(_handle, deck, stem, gain);
 
   /// Insert effect: type 0 none, 1 echo, 2 reverb, 3 flanger, 4 phaser,
   /// 5 crush, 6 gate; amount 0..1; beats for the tempo-synced ones.
@@ -419,3 +454,47 @@ class NativeEngine {
     }
   }
 }
+
+/// Stem separation runs on the engine library but needs no engine handle, so
+/// it can run in a worker isolate. Progress is global (one job at a time).
+class StemsNative {
+  StemsNative._() : _lib = NativeEngine.library();
+  static final instance = StemsNative._();
+  final DynamicLibrary _lib;
+
+  late final _separate = _lib
+      .lookupFunction<_StemsSeparateC, int Function(Pointer<Utf8>, Pointer<Utf8>, Pointer<Utf8>)>(
+        'dj_stems_separate',
+      );
+  late final _progress = _lib.lookupFunction<_FloatVoidC, double Function()>('dj_stems_progress');
+  late final _state = _lib.lookupFunction<_IntVoidC, int Function()>('dj_stems_state');
+  late final _cancel = _lib.lookupFunction<_VoidVoidC, void Function()>('dj_stems_cancel');
+  late final _error = _lib.lookupFunction<_LastErrorC, Pointer<Utf8> Function()>('dj_stems_error');
+
+  /// Blocking: decode, separate and write vocals/drums/bass/other WAVs.
+  bool separate(String input, String model, String outDir) {
+    final a = input.toNativeUtf8();
+    final b = model.toNativeUtf8();
+    final c = outDir.toNativeUtf8();
+    try {
+      return _separate(a, b, c) != 0;
+    } finally {
+      malloc.free(a);
+      malloc.free(b);
+      malloc.free(c);
+    }
+  }
+
+  double get progress => _progress();
+  /// 0 idle, 1 running, 2 done, -1 error.
+  int get state => _state();
+  void cancel() => _cancel();
+  String get error {
+    final p = _error();
+    return p == nullptr ? '' : p.toDartString();
+  }
+}
+
+/// Entry point for Isolate.run: separation in a worker so the UI keeps going.
+bool runStemSeparation(List<String> args) =>
+    StemsNative.instance.separate(args[0], args[1], args[2]);

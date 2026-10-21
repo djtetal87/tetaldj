@@ -765,6 +765,7 @@ class _HomePageState extends State<HomePage> {
     PadMode.loop: 'AUTO\nLOOP',
     PadMode.jump: 'BEAT\nJUMP',
     PadMode.fx: 'FX',
+    PadMode.stems: 'STEMS',
   };
 
   Widget _padModeButton(int i) {
@@ -871,6 +872,38 @@ class _HomePageState extends State<HomePage> {
           enabled: d.loaded,
           label: b < 0 ? '◀ ${-b}' : '$b ▶',
           onTap: () => _dj.beatJump(i, b),
+        );
+      case PadMode.stems:
+        if (slot >= 4) return const SizedBox.shrink();
+        if (d.stemsPreparing) {
+          return _pad(
+            color: SideDeckTheme.stems,
+            filled: false,
+            enabled: true,
+            label: slot == 0 ? '${(d.stemsProgress * 100).round()}%' : (slot == 3 ? 'STOP' : '…'),
+            small: true,
+            onTap: slot == 3 ? _dj.cancelStems : null,
+          );
+        }
+        if (!d.stemsOn) {
+          return _pad(
+            color: SideDeckTheme.stems,
+            filled: false,
+            enabled: d.loaded,
+            label: d.stemsReady ? DjController.stemNames[slot] : (slot == 0 ? 'PREPARAR' : 'STEMS'),
+            small: true,
+            onTap: () => _dj.prepareStems(i),
+          );
+        }
+        final on = d.stemGain[slot] > 0.01;
+        return _pad(
+          color: SideDeckTheme.stems,
+          filled: on,
+          enabled: true,
+          label: DjController.stemNames[slot],
+          small: true,
+          onTap: () => _dj.toggleStem(i, slot),
+          onLongPress: () => _dj.setStemsOn(i, false),
         );
       case PadMode.fx:
         final types = FxType.values.skip(1).toList();
@@ -1142,7 +1175,7 @@ class _HomePageState extends State<HomePage> {
   }
 }
 
-enum PadMode { hotcue, loop, jump, fx }
+enum PadMode { hotcue, loop, jump, fx, stems }
 
 class _XfaderThumb extends SliderComponentShape {
   const _XfaderThumb();
