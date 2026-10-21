@@ -54,3 +54,4 @@ android/.gradle/
 /tools/dump_grid
 /tools/qm_probe
 /tools/qm_probe.exe
+packages/tetaldj_engine/ios/onnxruntime.xcframework/

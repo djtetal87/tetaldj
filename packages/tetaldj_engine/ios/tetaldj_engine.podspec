@@ -16,16 +16,16 @@ Pod::Spec.new do |s|
   s.source           = { :path => '.' }
   s.source_files     = 'Classes/**/*'
   s.vendored_libraries = 'libtetaldj_engine.a'
-  s.preserve_paths   = 'libtetaldj_engine.a'
+  # ONNX Runtime (stems inference). The static xcframework is downloaded by
+  # the iOS workflow from download.onnxruntime.ai (pod-archive-onnxruntime-c)
+  # and vendored here, so it links into this dynamic framework.
+  s.vendored_frameworks = 'onnxruntime.xcframework'
+  s.weak_frameworks  = 'CoreML'
+  s.preserve_paths   = 'libtetaldj_engine.a', 'onnxruntime.xcframework'
   s.libraries        = 'c++'
   s.frameworks       = 'CoreAudio', 'AudioToolbox', 'AVFoundation', 'CoreFoundation'
   s.platform         = :ios, '15.0'
-  # onnxruntime-c ships a static xcframework; a dynamic pod may not depend
-  # on it transitively, so this plugin is a static framework too.
-  s.static_framework = true
   s.dependency 'Flutter'
-  # Stems model inference (dj_stems_separate) links against ONNX Runtime.
-  s.dependency 'onnxruntime-c', '1.20.0'
   s.pod_target_xcconfig = {
     'DEFINES_MODULE' => 'YES',
     'EXCLUDED_ARCHS[sdk=iphonesimulator*]' => 'i386',

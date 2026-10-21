@@ -51,6 +51,15 @@ jobs:
           lipo -info build/native-ios/libtetaldj_engine.a
           cp build/native-ios/libtetaldj_engine.a packages/tetaldj_engine/ios/
 
+      - name: ONNX Runtime xcframework (stems)
+        run: |
+          set -euo pipefail
+          curl -sSL -o ort.zip https://download.onnxruntime.ai/pod-archive-onnxruntime-c-1.20.0.zip
+          mkdir -p ort && unzip -q ort.zip -d ort
+          fw=$(find ort -name onnxruntime.xcframework -type d | head -1)
+          cp -R "$fw" packages/tetaldj_engine/ios/
+          ls packages/tetaldj_engine/ios/onnxruntime.xcframework
+
       - name: Flutter build (unsigned)
         run: |
           set -o pipefail
