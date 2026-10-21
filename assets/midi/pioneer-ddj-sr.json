@@ -2,7 +2,7 @@
   "name": "Pioneer DDJ-SR",
   "match": ["DDJ-SR", "DDJ-SX", "DDJ-SZ"],
   "jogTicksPerRev": 2048,
-  "tempoInverted": false,
+  "tempoInverted": true,
   "decks": [
     {"channel": 0, "padChannel": 7},
     {"channel": 1, "padChannel": 8}

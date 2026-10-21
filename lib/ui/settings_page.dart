@@ -4,8 +4,12 @@ import 'package:sidedeck/engine/usb_output.dart';
 import 'package:flutter_midi_command/flutter_midi_command.dart' show MidiDevice;
 import 'package:sidedeck/midi/midi_controller.dart';
 import 'package:sidedeck/state/dj_controller.dart';
+
 import 'package:sidedeck/subsonic/subsonic_client.dart';
 import 'package:sidedeck/theme/sidedeck_theme.dart';
+
+/// Shown in Ajustes; bump with pubspec.yaml.
+const kAppVersion = '0.5.0';
 
 class SettingsPage extends StatefulWidget {
   const SettingsPage({super.key, required this.dj, this.midi});
@@ -74,7 +78,7 @@ class _SettingsPageState extends State<SettingsPage> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      appBar: AppBar(title: const Text('Settings')),
+      appBar: AppBar(title: const Text('Ajustes')),
       body: ListView(
         padding: const EdgeInsets.all(16),
         children: [
@@ -161,33 +165,33 @@ class _SettingsPageState extends State<SettingsPage> {
             Text(_status!),
           ],
           const Divider(height: 32),
-          const Text(
-            'About',
-            style: TextStyle(fontWeight: FontWeight.bold, fontSize: 16),
-          ),
-          const SizedBox(height: 8),
-          const Text(
-            'SideDeck 1.1.0\n'
-            'Copyright © 2026 SideDeck contributors\n\n'
-            'This program is free software under the GNU GPL v3 or later. '
-            'There is no warranty.\n\n'
-            'Support & issues: github.com/manueljpy/SideDeck',
-            style: TextStyle(color: SideDeckTheme.muted, fontSize: 12, height: 1.4),
-          ),
-          const SizedBox(height: 12),
-          OutlinedButton(
-            onPressed: () {
-              showLicensePage(
-                context: context,
-                applicationName: 'SideDeck',
-                applicationVersion: '1.1.0',
-                applicationLegalese:
-                    'Copyright © 2026 SideDeck contributors\n\n'
-                    'GNU GPL v3 or later. See LICENSE and NOTICE in the '
-                    'source repository.',
-              );
-            },
-            child: const Text('Open-source licenses'),
+          Center(
+            child: Column(
+              children: [
+                const Text(
+                  'TetalDJ',
+                  style: TextStyle(fontWeight: FontWeight.w900, fontSize: 18),
+                ),
+                const Text(
+                  'Versión $kAppVersion',
+                  style: TextStyle(color: SideDeckTheme.muted, fontSize: 12),
+                ),
+                const SizedBox(height: 8),
+                TextButton(
+                  onPressed: () => showLicensePage(
+                    context: context,
+                    applicationName: 'TetalDJ',
+                    applicationVersion: kAppVersion,
+                    applicationLegalese:
+                        'Basado en SideDeck (GNU GPL v3 o posterior) y software libre.',
+                  ),
+                  child: const Text(
+                    'Licencias',
+                    style: TextStyle(color: SideDeckTheme.muted, fontSize: 11),
+                  ),
+                ),
+              ],
+            ),
           ),
         ],
       ),
@@ -230,6 +234,29 @@ class _SettingsPageState extends State<SettingsPage> {
                     ? TextButton(onPressed: midi.disconnect, child: const Text('Desconectar'))
                     : FilledButton(onPressed: () => midi.connect(d), child: const Text('Conectar')),
               ),
+            SwitchListTile(
+              contentPadding: EdgeInsets.zero,
+              dense: true,
+              title: const Text('Modo vinilo en el jog'),
+              subtitle: const Text('Tocar el plato hace scratch; apagado, solo pitch bend'),
+              value: midi.vinylMode,
+              onChanged: midi.setVinylMode,
+            ),
+            SwitchListTile(
+              contentPadding: EdgeInsets.zero,
+              dense: true,
+              title: const Text('Sonar por el celular'),
+              subtitle: Text(widget.dj.outputRoute == 1
+                  ? 'El audio sale por el parlante del teléfono aunque esté la controladora'
+                  : widget.dj.outputIsUsb
+                      ? 'Saliendo por la controladora (USB)'
+                      : 'Automático: controladora si está conectada, si no el teléfono'),
+              value: widget.dj.outputRoute == 1,
+              onChanged: (v) {
+                widget.dj.setOutputRoute(v ? 1 : 0);
+                setState(() {});
+              },
+            ),
             Row(
               children: [
                 OutlinedButton.icon(

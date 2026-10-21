@@ -36,6 +36,15 @@ class MidiController extends ChangeNotifier {
   // Per-deck state the controller needs that the engine doesn't.
   final List<bool> _shift = [false, false];
   final List<bool> _vinyl = [true, true];
+
+  bool get vinylMode => _vinyl[0];
+  void setVinylMode(bool on) {
+    _vinyl[0] = on;
+    _vinyl[1] = on;
+    _led(0, 'vinyl', on);
+    _led(1, 'vinyl', on);
+    notifyListeners();
+  }
   final List<bool> _touching = [false, false];
   final List<int> _lastTickUs = [0, 0];
   final List<Timer?> _still = [null, null];
@@ -318,7 +327,7 @@ class MidiController extends ChangeNotifier {
       final seconds = delta / m.jogTicksPerRev * 1.8;
       dj.platterScratch(deck, seconds / dt);
       _still[deck]?.cancel();
-      _still[deck] = Timer(const Duration(milliseconds: 80), () {
+      _still[deck] = Timer(const Duration(milliseconds: 45), () {
         if (_touching[deck]) dj.platterScratch(deck, 0);
       });
       return;

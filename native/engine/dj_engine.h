@@ -107,6 +107,12 @@ void dj_stems_detach(DjEngine engine, int deck);
 int dj_stems_attached(DjEngine engine, int deck);
 void dj_set_stem_gain(DjEngine engine, int deck, int stem, float gain);
 
+/// Output route: 0 automatic (controller sound card when plugged, else the
+/// phone), 1 force the phone speaker. Restart the stream after changing it.
+int dj_set_output_route(DjEngine engine, int route);
+/// 1 while iOS is routing audio to a USB sound card.
+int dj_output_is_usb(DjEngine engine);
+
 /// Headphone cue: when the output has 4+ channels (controller sound card),
 /// channels 3-4 carry the PFL'd decks blended with the master by mix.
 void dj_set_pfl(DjEngine engine, int deck, int on);

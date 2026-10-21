@@ -796,6 +796,16 @@ class DjController extends ChangeNotifier {
 
   int get outputChannels => _engine.outputChannels;
 
+  /// 0 = automatic (controller / headphones / speaker), 1 = phone speaker.
+  int outputRoute = 0;
+  bool get outputIsUsb => _engine.outputIsUsb;
+
+  void setOutputRoute(int route) {
+    outputRoute = route;
+    _engine.setOutputRoute(route);
+    restartAudio();
+  }
+
   /// Reopen the audio output (e.g. after plugging a controller) and re-apply
   /// the cue settings.
   bool restartAudio() {

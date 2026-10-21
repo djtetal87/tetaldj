@@ -231,6 +231,10 @@ class NativeEngine {
       .lookupFunction<_SetStemGainC, void Function(Pointer<Void>, int, int, double)>(
         'dj_set_stem_gain',
       );
+  late final _setOutputRoute = _lib
+      .lookupFunction<_SetModeC, int Function(Pointer<Void>, int)>('dj_set_output_route');
+  late final _outputIsUsb = _lib
+      .lookupFunction<_GetIntC, int Function(Pointer<Void>)>('dj_output_is_usb');
   late final _setPfl = _lib
       .lookupFunction<_BeatJumpC, void Function(Pointer<Void>, int, int)>('dj_set_pfl');
   late final _setCueMix = _lib
@@ -357,6 +361,10 @@ class NativeEngine {
   bool stemsAttached(int deck) => _stemsAttached(_handle, deck) != 0;
   void setStemGain(int deck, int stem, double gain) =>
       _setStemGain(_handle, deck, stem, gain);
+
+  /// 0 automatic (controller sound card when plugged), 1 phone speaker.
+  void setOutputRoute(int route) => _setOutputRoute(_handle, route);
+  bool get outputIsUsb => _outputIsUsb(_handle) != 0;
 
   /// Headphone cue (channels 3-4 on a 4-channel output).
   void setPfl(int deck, bool on) => _setPfl(_handle, deck, on ? 1 : 0);

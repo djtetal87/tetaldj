@@ -175,3 +175,14 @@ que no se puede probar fuera de macOS: el log queda en el summary del run.
   y cae a 2); canales 3-4 = cue de audífonos: decks con PFL pre-fader
   mezclados con el master (`dj_set_pfl`, `dj_set_cue_mix`). Botón de
   audífonos por canal en la hoja del mixer; "reconectar audio" en Ajustes.
+
+### v0.5.1 — ajustes tras la primera prueba con la DDJ-SR (2026-10-21)
+- Tempo del mapeo invertido (fader abajo = más rápido en la SR).
+- Salida: contexto miniaudio con categoría PlayAndRecord + DefaultToSpeaker;
+  `dj_set_output_route(1)` fuerza el parlante del teléfono
+  (overrideOutputAudioPort) aunque esté la tarjeta USB; interruptor "Sonar
+  por el celular" en Ajustes. `NSMicrophoneUsageDescription` en Info.plist.
+- Latencia: `setPreferredIOBufferDuration` 5 ms y 48 kHz en la sesión;
+  scratch con suavizado más directo (0,6/bloque); quieto a los 45 ms.
+- Interruptor "Modo vinilo en el jog" (encendido por defecto) en Ajustes.
+- Ajustes: "About" reducido a TetalDJ + versión + licencias.

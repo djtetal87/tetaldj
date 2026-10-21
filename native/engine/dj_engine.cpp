@@ -14,6 +14,9 @@
 #include "miniaudio.h"
 #endif
 
+#ifdef __APPLE__
+#include <TargetConditionals.h>
+#endif
 #include <algorithm>
 #include <atomic>
 #include <cctype>
@@ -42,6 +45,10 @@
 #include "mix_recorder.hpp"
 #include "deck_fx.hpp"
 #include "stem_separator.hpp"
+
+extern "C" int tetaldj_force_speaker(int on);
+extern "C" void tetaldj_prefer_low_latency(void);
+extern "C" int tetaldj_output_is_usb(void);
 
 #include "platform_log.hpp"
 
@@ -506,6 +513,8 @@ struct Engine {
   std::mutex streamMutex;
   ma_device device{};
   bool deviceInit = false;
+  ma_context context{};
+  bool contextInit = false;
 #endif
   Deck decks[2];
   std::atomic<float> xfader{0.5f};
@@ -514,6 +523,7 @@ struct Engine {
   std::atomic<int> engineSampleRate{48000};
   std::atomic<int> engineChannels{2};
   std::atomic<bool> wantFourChannels{true};
+  std::atomic<bool> forceSpeaker{false};
   std::atomic<bool> pfl[2] = {{false}, {false}};
   std::atomic<float> cueMix{0.0f};   // 0 = cue only, 1 = master only
   std::atomic<float> cueGain{1.0f};
@@ -715,10 +725,29 @@ struct Engine {
     cfg.pUserData = this;
     cfg.performanceProfile = ma_performance_profile_low_latency;
 
-    if (ma_device_init(nullptr, &cfg, &device) != MA_SUCCESS) {
+    if (!contextInit) {
+      ma_context_config cc = ma_context_config_init();
+#if defined(__APPLE__) && TARGET_OS_IPHONE
+      // PlayAndRecord is what lets us force the phone speaker while a USB
+      // sound card is connected; DefaultToSpeaker keeps the speaker (not the
+      // earpiece) when nothing is plugged in.
+      cc.coreaudio.sessionCategory = ma_ios_session_category_play_and_record;
+      cc.coreaudio.sessionCategoryOptions =
+          ma_ios_session_category_option_default_to_speaker |
+          ma_ios_session_category_option_allow_bluetooth_a2dp |
+          ma_ios_session_category_option_mix_with_others;
+#endif
+      if (ma_context_init(nullptr, 0, &cc, &context) != MA_SUCCESS) {
+        LOGE("openStream failed (miniaudio context)");
+        return false;
+      }
+      contextInit = true;
+    }
+    tetaldj_prefer_low_latency();
+    if (ma_device_init(&context, &cfg, &device) != MA_SUCCESS) {
       if (cfg.playback.channels == 4) {
         cfg.playback.channels = 2;
-        if (ma_device_init(nullptr, &cfg, &device) != MA_SUCCESS) {
+        if (ma_device_init(&context, &cfg, &device) != MA_SUCCESS) {
           LOGE("openStream failed (miniaudio init)");
           return false;
         }
@@ -744,6 +773,7 @@ struct Engine {
       deviceInit = false;
       return false;
     }
+    tetaldj_force_speaker(forceSpeaker.load() ? 1 : 0);
     return true;
   }
 
@@ -796,7 +826,7 @@ struct Engine {
       const double target = (double)d.scratchRate.load(std::memory_order_relaxed);
       const bool braking = d.braking.load(std::memory_order_relaxed);
       // Hand: snappy. Brake: a vinyl motor winding down over ~0.8 s.
-      d.scratchCur += (target - d.scratchCur) * (braking ? 0.035 : 0.35);
+      d.scratchCur += (target - d.scratchCur) * (braking ? 0.035 : 0.6);
       if (braking && std::fabs(d.scratchCur) < 0.01) {
         d.scratchCur = 0.0;
         d.braking.store(false);
@@ -1799,6 +1829,16 @@ void dj_set_cue_mix(DjEngine engine, float mix, float gain) {
   e->cueMix.store(std::max(0.0f, std::min(1.0f, mix)));
   e->cueGain.store(std::max(0.0f, std::min(1.5f, gain)));
 }
+
+int dj_set_output_route(DjEngine engine, int route) {
+  // 0 = automatic (USB sound card / headphones / speaker), 1 = phone speaker.
+  Engine* e = asEngine(engine);
+  e->forceSpeaker.store(route == 1);
+  e->wantFourChannels.store(route != 1);
+  return tetaldj_force_speaker(route == 1 ? 1 : 0);
+}
+
+int dj_output_is_usb(DjEngine) { return tetaldj_output_is_usb(); }
 
 } // extern "C"
 
